@@ -1,0 +1,25 @@
+# Root .htaccess
+# Requires Apache mod_rewrite / mod_headers enabled.
+
+# --- Block direct web access to sensitive folders ---
+RewriteEngine On
+RewriteRule ^(includes|db)/ - [F,L]
+
+# --- Disable directory listing ---
+Options -Indexes
+
+# --- Hide dotfiles (.env, .git, etc.) ---
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# --- Basic security headers ---
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# --- Never expose PHP errors/version in production ---
+ServerSignature Off
