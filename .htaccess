@@ -1,25 +1,36 @@
-# Root .htaccess
-# Requires Apache mod_rewrite / mod_headers enabled.
+# ==============================================================================
+# Root .htaccess - PHP FreeBase Server Hardening
+# ==============================================================================
+# Requires Apache mod_rewrite, mod_headers, and mod_authz_core enabled.
+# ==============================================================================
 
-# --- Block direct web access to sensitive folders ---
-RewriteEngine On
-RewriteRule ^(includes|db)/ - [F,L]
+# --- Block direct web access to internal application directories ---
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(includes|db)/ - [F,L]
+</IfModule>
 
-# --- Disable directory listing ---
+# --- Disable directory browsing ---
 Options -Indexes
 
-# --- Hide dotfiles (.env, .git, etc.) ---
-<FilesMatch "^\.">
+# --- Block access to sensitive file extensions (.env, .sql, .log, .git, etc.) ---
+<FilesMatch "(^\.|\.(sql|env|log|bak|config|dist|sh|bat)$)">
     Require all denied
 </FilesMatch>
 
-# --- Basic security headers ---
+# --- Restrict HTTP methods to only safe verbs ---
+<LimitExcept GET POST HEAD>
+    Require all denied
+</LimitExcept>
+
+# --- Defense-in-Depth HTTP Security Headers ---
 <IfModule mod_headers.c>
     Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-Frame-Options "DENY"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
-    Header set X-XSS-Protection "1; mode=block"
+    Header set Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self';"
 </IfModule>
 
-# --- Never expose PHP errors/version in production ---
+# --- Suppress server tokens and banner signatures ---
 ServerSignature Off
