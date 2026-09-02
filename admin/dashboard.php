@@ -4,6 +4,7 @@
  * -------------
  * Account and administration dashboard.
  * Adapts contextually based on user role (Admin vs Standard User).
+ * Real runtime security telemetry and administrative user password reset.
  */
 
 declare(strict_types=1);
@@ -19,11 +20,28 @@ require_login();
 $username       = (string) ($_SESSION['username'] ?? 'User');
 $email          = (string) ($_SESSION['email'] ?? '');
 $role           = (string) ($_SESSION['role'] ?? 'user');
+$sessionVer     = (int) ($_SESSION['session_version'] ?? 1);
 $isAdmin        = is_admin();
 $sessionCreated = date('H:i:s d/m/Y', (int) ($_SESSION['created_at'] ?? time()));
 $lastActivity   = date('H:i:s', (int) ($_SESSION['last_activity'] ?? time()));
 
+$isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+           ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443);
+
 $dbConnected = is_database_connected();
+$allUsers = [];
+$flash = $_SESSION['admin_flash'] ?? null;
+unset($_SESSION['admin_flash']);
+
+if ($dbConnected && $isAdmin) {
+    try {
+        $pdo = get_pdo();
+        $stmt = $pdo->query('SELECT id, username, email, role, is_active, email_verified_at, created_at, session_version FROM users ORDER BY id ASC');
+        $allUsers = $stmt->fetchAll();
+    } catch (Throwable $e) {
+        error_log('[Dashboard User Query Error] ' . $e->getMessage());
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -66,6 +84,13 @@ $dbConnected = is_database_connected();
 </header>
 
 <main class="container">
+    <?php if ($flash !== null): ?>
+        <div class="alert alert-<?= e($flash['type']) ?>" role="alert">
+            <span class="alert-message"><?= e($flash['message']) ?></span>
+            <button type="button" class="alert-close" aria-label="Dismiss alert">&times;</button>
+        </div>
+    <?php endif; ?>
+
     <div class="page-header">
         <div>
             <h1><?= $isAdmin ? 'System Administration' : 'Member Dashboard' ?></h1>
@@ -87,7 +112,7 @@ $dbConnected = is_database_connected();
                 <span class="badge badge-<?= $isAdmin ? 'admin' : 'neon' ?>"><?= strtoupper(e($role)) ?></span>
             </div>
             <div class="stat-value"><?= e($username) ?></div>
-            <div class="stat-meta">Active session verified</div>
+            <div class="stat-meta">Session Version: v<?= (int) $sessionVer ?></div>
         </div>
 
         <div class="card stat-card">
@@ -114,26 +139,70 @@ $dbConnected = is_database_connected();
                 <span class="badge badge-muted">Direct</span>
             </div>
             <div class="stat-value text-mono"><?= e(get_client_ip()) ?></div>
-            <div class="stat-meta">Encrypted connection</div>
+            <!-- Runtime accurate transport layer report (no static false claim) -->
+            <div class="stat-meta">
+                <?= $isHttps ? 'TLS Active (Encrypted)' : 'Plaintext HTTP (Insecure)' ?>
+            </div>
         </div>
     </div>
 
-    <!-- Main Content Area -->
+    <!-- User Management Section (Admin Only) -->
     <?php if ($isAdmin): ?>
         <section class="card content-card">
             <div class="card-header">
-                <h2>Administrative Control</h2>
-                <span class="badge badge-admin">Privileged Access</span>
+                <h2>User Account Management &amp; Password Reset</h2>
+                <span class="badge badge-admin">Admin Capability</span>
             </div>
             <p>
-                You are authenticated as the system administrator. From here, you have full oversight of user records,
-                database integrity, and platform configuration.
+                As administrator, you can reset passwords for accounts directly without ever seeing their prior passwords.
+                Resetting a password automatically increments the account's session version, invalidating all existing sessions.
             </p>
-            <div class="mt-4">
-                <a href="security.php" class="btn btn-primary">
-                    Access Security Architecture &amp; Threat Telemetry &rarr;
-                </a>
-            </div>
+
+            <?php if (!empty($allUsers)): ?>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Version</th>
+                                <th>Status</th>
+                                <th>Emergency Password Reset</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($allUsers as $u): ?>
+                                <tr>
+                                    <td>#<?= (int) $u['id'] ?></td>
+                                    <td><strong><?= e($u['username']) ?></strong></td>
+                                    <td><?= e($u['email']) ?></td>
+                                    <td><span class="badge badge-<?= $u['role'] === 'admin' ? 'admin' : 'muted' ?>"><?= strtoupper(e($u['role'])) ?></span></td>
+                                    <td class="text-mono">v<?= (int) $u['session_version'] ?></td>
+                                    <td>
+                                        <?php if (!empty($u['email_verified_at'])): ?>
+                                            <span class="badge badge-success">Verified</span>
+                                        <?php else: ?>
+                                            <span class="badge badge-warning">Unverified</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <form method="post" action="reset-user-password.php" class="inline-reset-form">
+                                            <?= csrf_field() ?>
+                                            <input type="hidden" name="target_user_id" value="<?= (int) $u['id'] ?>">
+                                            <input type="password" name="new_password" placeholder="New pass (min 8)" minlength="8" maxlength="128" required class="input-inline">
+                                            <button type="submit" class="btn btn-sm btn-secondary" onclick="return confirm('Reset password for this user? All existing sessions will be invalidated.');">Set Password</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <p class="empty-state">No users retrieved.</p>
+            <?php endif; ?>
         </section>
     <?php else: ?>
         <section class="card content-card">
@@ -162,12 +231,26 @@ $dbConnected = is_database_connected();
                         <td class="text-mono"><?= e(substr(session_id(), 0, 8)) ?>•••••••••••••••• (Masked)</td>
                     </tr>
                     <tr>
+                        <td><strong>Session Version</strong></td>
+                        <td>v<?= (int) $sessionVer ?> (Invalidated immediately if password is reset)</td>
+                    </tr>
+                    <tr>
                         <td><strong>Idle Timeout Limit</strong></td>
                         <td><?= (int)(SESSION_LIFETIME / 60) ?> minutes of inactivity</td>
                     </tr>
                     <tr>
                         <td><strong>Absolute Session Cap</strong></td>
                         <td><?= (int)(SESSION_MAX_LIFETIME / 3600) ?> hours</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Transport Layer Security</strong></td>
+                        <td>
+                            <?php if ($isHttps): ?>
+                                <span class="badge badge-success">HTTPS (TLS Active - Secure Cookies Enforced)</span>
+                            <?php else: ?>
+                                <span class="badge badge-warning">HTTP (Plaintext Insecure - Development Mode)</span>
+                            <?php endif; ?>
+                        </td>
                     </tr>
                 </tbody>
             </table>

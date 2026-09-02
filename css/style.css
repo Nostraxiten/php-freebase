@@ -804,6 +804,32 @@ label {
     text-align: center;
 }
 
+.text-sm {
+    font-size: 0.8rem;
+}
+
+.inline-reset-form {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.input-inline {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    width: 130px;
+}
+
+.input-inline:focus {
+    outline: none;
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .site-header {

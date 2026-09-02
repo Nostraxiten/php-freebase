@@ -4,6 +4,7 @@
  * ------------
  * Administrator-only Security Intelligence & Architecture Console.
  * Restricted strictly to users with the 'admin' role.
+ * Accurately reports real runtime state without misleading claims.
  * Fully documented in English.
  */
 
@@ -18,7 +19,12 @@ start_secure_session();
 require_admin();
 
 $username = (string) ($_SESSION['username'] ?? 'admin');
-$role = (string) ($_SESSION['role'] ?? 'admin');
+$role     = (string) ($_SESSION['role'] ?? 'admin');
+
+$isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+           ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443);
+
+$emergencyResetActive = (ADMIN_RECOVERY_SECRET !== '');
 
 $recentAttempts = [];
 try {
@@ -62,11 +68,15 @@ try {
 <main class="container">
     <div class="page-header">
         <div>
-            <h1>Security Architecture & Controls</h1>
-            <p class="subtitle">System defenses, OWASP mitigations, and runtime security telemetry</p>
+            <h1>Security Architecture &amp; Controls</h1>
+            <p class="subtitle">System defenses, runtime security telemetry, and password recovery architecture</p>
         </div>
         <div>
-            <span class="badge badge-success">Defense-in-Depth Active</span>
+            <?php if ($isHttps): ?>
+                <span class="badge badge-success">Production TLS Enforced</span>
+            <?php else: ?>
+                <span class="badge badge-warning">Local Development (Plaintext HTTP)</span>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -87,7 +97,7 @@ try {
                 <span class="badge badge-success">Persistent</span>
             </div>
             <div class="stat-value">DB Throttling</div>
-            <div class="stat-meta">login_attempts (IP & User)</div>
+            <div class="stat-meta">login_attempts (IP &amp; User)</div>
         </div>
 
         <div class="card stat-card">
@@ -95,60 +105,65 @@ try {
                 <span class="stat-label">Session Hardening</span>
                 <span class="badge badge-neon">Strict Mode</span>
             </div>
-            <div class="stat-value">Dual Timeout</div>
-            <div class="stat-meta">HttpOnly | SameSite | Fixation Immune</div>
+            <div class="stat-value">Versioned v<?= (int)($_SESSION['session_version'] ?? 1) ?></div>
+            <div class="stat-meta">HttpOnly | SameSite | <?= $isHttps ? 'Secure Flag Active' : 'Secure Inactive (HTTP)' ?></div>
         </div>
 
         <div class="card stat-card">
             <div class="stat-header">
-                <span class="stat-label">CSRF Protection</span>
-                <span class="badge badge-success">Active</span>
+                <span class="stat-label">Password Recovery</span>
+                <span class="badge badge-neon">One-Way Reset</span>
             </div>
-            <div class="stat-value">Synchronizer</div>
-            <div class="stat-meta">POST-only state mutation</div>
+            <div class="stat-value">SHA-256 Tokens</div>
+            <div class="stat-meta">Zero Plaintext Recovery by Design</div>
         </div>
     </div>
 
-    <!-- OWASP Controls Overview -->
+    <!-- Password Recovery & Hashing Architecture -->
     <section class="card content-card">
         <div class="card-header">
-            <h2>OWASP Top 10 Defensive Implementations</h2>
-            <span class="badge badge-muted">Architectural Reference</span>
+            <h2>Password Architecture &amp; Recovery Specifications</h2>
+            <span class="badge badge-neon">Cryptographic Standards</span>
         </div>
         <div class="table-responsive">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Category</th>
-                        <th>Mitigation Mechanism</th>
-                        <th>Implementation Details</th>
+                        <th>Security Domain</th>
+                        <th>Architecture Principle</th>
+                        <th>Implementation Guarantee</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td><strong>A01: Broken Access Control</strong></td>
-                        <td>Server-side validation &amp; CSRF Tokens</td>
-                        <td>Strict separation of authentication and authorization. Role checks (<code>require_admin()</code>) enforced on server. POST-only state changes.</td>
+                        <td><strong>One-Way Hashing</strong></td>
+                        <td><code>password_hash()</code> / <code>password_verify()</code></td>
+                        <td>Passwords are never stored or logged in plaintext. No decryption or master password exists. Reversible password recovery is strictly prohibited.</td>
                     </tr>
                     <tr>
-                        <td><strong>A02: Cryptographic Failures</strong></td>
-                        <td>Bcrypt / Argon2 with Auto-Rehash</td>
-                        <td>Passwords hashed via <code>password_hash()</code>. Routine <code>password_needs_rehash()</code> automatically upgrades hashes upon login.</td>
+                        <td><strong>Token Hashing</strong></td>
+                        <td>SHA-256 Storage</td>
+                        <td>Reset tokens generated via <code>bin2hex(random_bytes(32))</code>. Only the SHA-256 hash is persisted in <code>password_reset_tokens</code>.</td>
                     </tr>
                     <tr>
-                        <td><strong>A03: Injection (SQLi &amp; XSS)</strong></td>
-                        <td>PDO Prepared Statements &amp; Output Encoding</td>
-                        <td>Zero concatenated SQL queries. Contextual HTML encoding via <code>htmlspecialchars(..., ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')</code>.</td>
+                        <td><strong>Single-Use &amp; Expiration</strong></td>
+                        <td>1-Hour Time-to-Live</td>
+                        <td>Tokens expire automatically after 3600 seconds and are consumed atomically via <code>used_at = NOW()</code>. Replay attempts are rejected.</td>
                     </tr>
                     <tr>
-                        <td><strong>A05: Security Misconfiguration</strong></td>
-                        <td>HTTP Headers &amp; Error Masking</td>
-                        <td>Content-Security-Policy, X-Frame-Options (DENY), X-Content-Type-Options. Technical database exceptions are masked and sent to server error logs.</td>
+                        <td><strong>Session Revocation</strong></td>
+                        <td>Per-Account <code>session_version</code></td>
+                        <td>Any password reset increments <code>session_version</code>, terminating all concurrent sessions across all devices immediately.</td>
                     </tr>
                     <tr>
-                        <td><strong>A07: Identification Failures</strong></td>
-                        <td>DB Rate Limiting &amp; Session Strict Mode</td>
-                        <td>Persistent IP-based lockout immune to session discarding. Enforced <code>session.use_strict_mode = 1</code> preventing session fixation.</td>
+                        <td><strong>Account Enumeration Defense</strong></td>
+                        <td>Uniform Generic Feedback</td>
+                        <td>Password recovery requests always return identical confirmation text regardless of whether the submitted account exists.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Emergency Admin Secret</strong></td>
+                        <td><code>ADMIN_RECOVERY_SECRET</code></td>
+                        <td>Status: <strong><?= $emergencyResetActive ? 'Configured (Active)' : 'Disabled (Not configured)' ?></strong>. Compared using timing-safe <code>hash_equals()</code> with rate limiting.</td>
                     </tr>
                 </tbody>
             </table>
@@ -159,11 +174,21 @@ try {
     <section class="card content-card">
         <div class="card-header">
             <h2>Active Telemetry &amp; HTTP Security Headers</h2>
-            <span class="badge badge-neon">HTTP Response Headers</span>
+            <span class="badge badge-neon">Live Server State</span>
         </div>
         <div class="info-table-wrapper">
             <table class="info-table">
                 <tbody>
+                    <tr>
+                        <td><strong>Transport Layer Security (TLS)</strong></td>
+                        <td>
+                            <?php if ($isHttps): ?>
+                                <span class="badge badge-success">HTTPS Active (Encrypted)</span>
+                            <?php else: ?>
+                                <span class="badge badge-warning">HTTP (Plaintext - Insecure / Development Server)</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
                     <tr>
                         <td><strong>Content-Security-Policy (CSP)</strong></td>
                         <td class="text-mono">default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none';</td>
@@ -205,9 +230,9 @@ try {
                     <thead>
                         <tr>
                             <th>Client IP</th>
-                            <th>Target Username / Email</th>
+                            <th>Target Identifier</th>
                             <th>Attempt Timestamp</th>
-                            <th>Action Taken</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>

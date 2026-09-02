@@ -90,6 +90,9 @@ define('SESSION_LIFETIME', (int) env_get('SESSION_LIFETIME', 3600));          //
 define('SESSION_MAX_LIFETIME', (int) env_get('SESSION_MAX_LIFETIME', 28800)); // Absolute lifetime (8 hours)
 define('LOGIN_MAX_ATTEMPTS', (int) env_get('LOGIN_MAX_ATTEMPTS', 5));
 define('LOGIN_LOCKOUT_SECONDS', (int) env_get('LOGIN_LOCKOUT_SECONDS', 300)); // 5 minutes
+define('RESET_TOKEN_LIFETIME', (int) env_get('RESET_TOKEN_LIFETIME', 3600));   // 1 hour
+define('VERIFY_TOKEN_LIFETIME', (int) env_get('VERIFY_TOKEN_LIFETIME', 86400)); // 24 hours
+define('ADMIN_RECOVERY_SECRET', (string) env_get('ADMIN_RECOVERY_SECRET', ''));
 
 // --- Error Reporting Configuration ---
 if (APP_DEBUG) {

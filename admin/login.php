@@ -98,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="form-group">
                 <div class="label-row">
                     <label for="password">Password</label>
+                    <a href="../forgot-password.php" class="link-muted text-sm">Forgot password?</a>
                 </div>
                 <div class="input-container">
                     <input
@@ -128,6 +129,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <footer class="auth-footer">
             <p>Need an account? <a href="../register.php" class="link-accent">Register here</a></p>
+            <?php if (ADMIN_RECOVERY_SECRET !== ''): ?>
+                <p><a href="../emergency-reset.php" class="link-muted text-sm">Emergency Admin Reset</a></p>
+            <?php endif; ?>
             <a href="../index.php" class="link-muted">&larr; Return to Homepage</a>
         </footer>
     </main>
