@@ -4,6 +4,7 @@
  * ------------
  * User registration portal.
  * Creates standard user accounts with cryptographic email verification.
+ * In production, tokens are strictly delivered via email and NEVER displayed on screen.
  */
 
 declare(strict_types=1);
@@ -13,6 +14,7 @@ define('APP_SECURE', true);
 require_once __DIR__ . '/includes/auth.php';
 
 send_security_headers();
+send_no_cache_headers();
 start_secure_session();
 
 if (is_logged_in()) {
@@ -84,19 +86,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="alert alert-success" role="alert">
                 <div class="alert-content">
                     <strong>Account created successfully!</strong>
-                    <p>A verification email has been dispatched to <code><?= e($registeredEmail) ?></code>.</p>
+                    <p>A verification email has been dispatched to <code><?= e($registeredEmail) ?></code>. Please check your inbox to activate your account.</p>
                 </div>
             </div>
 
-            <div class="verification-box">
-                <div class="box-title">LOCAL ENVIRONMENT ACTIVATION</div>
-                <p>Since this system is running locally, use this instant verification link to activate your account:</p>
-                <div class="token-link-wrapper">
-                    <a href="verify.php?token=<?= e($verificationToken) ?>" class="btn btn-primary btn-block">
-                        Activate Account Now &rarr;
-                    </a>
+            <?php if (APP_ENV === 'development' && APP_DEBUG && $verificationToken !== ''): ?>
+                <div class="verification-box">
+                    <div class="box-title">LOCAL DEVELOPMENT ACTIVATION</div>
+                    <p>Since the application is running in local development mode, use this instant verification link to activate the account:</p>
+                    <div class="token-link-wrapper">
+                        <a href="verify.php?token=<?= e($verificationToken) ?>" class="btn btn-primary btn-block">
+                            Activate Account Now &rarr;
+                        </a>
+                    </div>
                 </div>
-            </div>
+            <?php endif; ?>
 
             <footer class="auth-footer">
                 <a href="admin/login.php" class="link-muted">&larr; Proceed to Sign In</a>
@@ -142,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             value="<?= e($emailVal) ?>"
                             autocomplete="email"
                             maxlength="100"
-                            placeholder="you@domain.com"
+                            placeholder="you@example.com"
                             required
                         >
                     </div>
@@ -186,7 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
 
             <footer class="auth-footer">
-                <p>Already have an account? <a href="admin/login.php" class="link-accent">Sign In</a></p>
+                <p>Already have an account? <a href="admin/login.php" class="link-accent">Sign in</a></p>
                 <a href="index.php" class="link-muted">&larr; Return to Homepage</a>
             </footer>
 

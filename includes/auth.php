@@ -19,6 +19,9 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/functions.php';
 
+// Constant dummy hash for timing attack mitigation during failed user lookups
+define('DUMMY_BCRYPT_HASH', '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012');
+
 /**
  * Bootstrap an enterprise-grade hardened PHP session.
  * Enforces strict session mode, cookies, idle/absolute timeouts,
@@ -36,14 +39,16 @@ function start_secure_session(): void
 
     session_name(SESSION_NAME);
 
+    // Protocol check with reverse proxy support (Cloudflare, Nginx, ALB)
     $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
-               ((int)($_SERVER['SERVER_PORT'] ?? 80) === 443);
+               ((int)($_SERVER['SERVER_PORT'] ?? 80) === 443) ||
+               (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
     session_set_cookie_params([
         'lifetime' => 0,          // Cookie expires on browser close
         'path'     => '/',
         'domain'   => '',
-        'secure'   => $isHttps,   // Secure flag only sent over HTTPS
+        'secure'   => $isHttps,   // Secure flag sent over HTTPS
         'httponly' => true,       // Mitigate XSS session theft
         'samesite' => 'Lax',      // Mitigate CSRF
     ]);
@@ -75,8 +80,8 @@ function start_secure_session(): void
     $_SESSION['last_activity'] = $now;
 
     // 3. Per-Account Session Invalidation Verification (session_version)
-    // If a password reset or admin reset occurred, session_version in the DB is incremented.
-    // Stale sessions with an older session_version are revoked immediately.
+    // If a password reset, password change, or admin reset occurred, session_version in the DB is incremented.
+    // Stale sessions with an older session_version are revoked immediately across all devices.
     if (!empty($_SESSION['user_id']) && isset($_SESSION['session_version'])) {
         try {
             $pdo = get_pdo();
@@ -85,7 +90,7 @@ function start_secure_session(): void
             $row = $stmt->fetch();
 
             if (!$row || (int) $row['is_active'] !== 1 || (int) $row['session_version'] !== (int) $_SESSION['session_version']) {
-                // Session revoked due to password reset or account deactivation
+                // Session revoked due to password change, admin reset, or account deactivation
                 logout();
                 start_secure_session();
                 return;
@@ -106,7 +111,7 @@ function is_logged_in(): bool
 
 /**
  * Check if the authenticated user is the administrator.
- * Only the designated "admin" user with role "admin" has administrative privileges.
+ * Strictly verifies user_id, session role, and designated username.
  */
 function is_admin(): bool
 {
@@ -139,9 +144,12 @@ function require_admin(): void
 
 /**
  * Database-backed brute force rate-limiting.
+ * Normalizes identifiers to prevent case-manipulation bypass.
  */
 function is_rate_limited(string $identifier, string $ip): bool
 {
+    $cleanIdentifier = strtolower(trim($identifier));
+
     try {
         $pdo = get_pdo();
         $cutoff = date('Y-m-d H:i:s', time() - LOGIN_LOCKOUT_SECONDS);
@@ -150,7 +158,7 @@ function is_rate_limited(string $identifier, string $ip): bool
             'SELECT COUNT(*) FROM login_attempts
              WHERE (ip_address = ? OR username = ?) AND attempted_at >= ?'
         );
-        $stmt->execute([$ip, $identifier, $cutoff]);
+        $stmt->execute([$ip, $cleanIdentifier, $cutoff]);
         $attempts = (int) $stmt->fetchColumn();
 
         return $attempts >= LOGIN_MAX_ATTEMPTS;
@@ -165,10 +173,12 @@ function is_rate_limited(string $identifier, string $ip): bool
 }
 
 /**
- * Record a failed authentication or reset attempt in the database.
+ * Record a failed authentication, reset, or registration attempt in the database.
  */
 function record_failed_attempt(string $identifier, string $ip): void
 {
+    $cleanIdentifier = strtolower(trim($identifier));
+
     if (empty($_SESSION['login_throttle'])) {
         $_SESSION['login_throttle'] = ['count' => 1, 'first_attempt' => time()];
     } else {
@@ -178,8 +188,9 @@ function record_failed_attempt(string $identifier, string $ip): void
     try {
         $pdo = get_pdo();
         $stmt = $pdo->prepare('INSERT INTO login_attempts (ip_address, username, attempted_at) VALUES (?, ?, NOW())');
-        $stmt->execute([$ip, $identifier]);
+        $stmt->execute([$ip, $cleanIdentifier]);
 
+        // Probabilistic cleanup of obsolete records older than 1 day
         if (random_int(1, 20) === 1) {
             $pdo->exec("DELETE FROM login_attempts WHERE attempted_at < (NOW() - INTERVAL 1 DAY)");
         }
@@ -193,12 +204,13 @@ function record_failed_attempt(string $identifier, string $ip): void
  */
 function clear_failed_attempts(string $identifier, string $ip): void
 {
+    $cleanIdentifier = strtolower(trim($identifier));
     unset($_SESSION['login_throttle']);
 
     try {
         $pdo = get_pdo();
         $stmt = $pdo->prepare('DELETE FROM login_attempts WHERE ip_address = ? OR username = ?');
-        $stmt->execute([$ip, $identifier]);
+        $stmt->execute([$ip, $cleanIdentifier]);
     } catch (Throwable $e) {
         error_log('[Clear Attempts Error] ' . $e->getMessage());
     }
@@ -207,15 +219,28 @@ function clear_failed_attempts(string $identifier, string $ip): void
 /**
  * Register a new user account with an expiring email verification token.
  * All new registrations are strictly assigned the 'user' role.
+ * In production, the raw token is NEVER returned to the client.
  */
 function register_user(string $username, string $email, string $password): array
 {
     $ip = get_client_ip();
 
-    if (is_rate_limited($ip, $ip)) {
+    if (is_rate_limited('register', $ip)) {
         return [
             'success' => false,
-            'error'   => 'Too many registration requests. Please wait a few minutes.',
+            'error'   => 'Too many registration requests from your address. Please wait a few minutes.',
+        ];
+    }
+
+    $cleanUsername = strtolower(trim($username));
+    $cleanEmail    = strtolower(trim($email));
+
+    // Disallow reserved names
+    if ($cleanUsername === 'admin' || str_starts_with($cleanUsername, 'admin_') || str_starts_with($cleanUsername, 'root')) {
+        record_failed_attempt('register', $ip);
+        return [
+            'success' => false,
+            'error'   => 'This username is reserved. Please choose another username.',
         ];
     }
 
@@ -243,9 +268,11 @@ function register_user(string $username, string $email, string $password): array
     try {
         $pdo = get_pdo();
 
+        // Check if username or email is already registered
         $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1');
-        $stmt->execute([$username, $email]);
+        $stmt->execute([$cleanUsername, $cleanEmail]);
         if ($stmt->fetch()) {
+            record_failed_attempt('register', $ip);
             return [
                 'success' => false,
                 'error'   => 'Username or email address is already in use.',
@@ -256,15 +283,22 @@ function register_user(string $username, string $email, string $password): array
         $verificationToken = bin2hex(random_bytes(32));
         $verificationExpires = date('Y-m-d H:i:s', time() + VERIFY_TOKEN_LIFETIME);
 
+        // Strictly assign role 'user'
         $insertStmt = $pdo->prepare(
             'INSERT INTO users (username, email, password, role, is_active, email_verified_at, verification_token, verification_expires_at, session_version)
              VALUES (?, ?, ?, "user", 1, NULL, ?, ?, 1)'
         );
-        $insertStmt->execute([$username, $email, $passwordHash, $verificationToken, $verificationExpires]);
+        $insertStmt->execute([$cleanUsername, $cleanEmail, $passwordHash, $verificationToken, $verificationExpires]);
+
+        // Record attempt to enforce registration rate limiting
+        record_failed_attempt('register', $ip);
+
+        // Return token ONLY in development mode with active debug; strictly empty in production
+        $devToken = (APP_ENV === 'development' && APP_DEBUG) ? $verificationToken : '';
 
         return [
             'success' => true,
-            'token'   => $verificationToken,
+            'token'   => $devToken,
             'error'   => '',
         ];
     } catch (Throwable $e) {
@@ -334,13 +368,15 @@ function verify_email_token(string $token): array
 }
 
 /**
- * Attempt authentication with password verification, rehash, email check, and session versioning.
+ * Attempt authentication with timing equalization, rehash, email check, and session versioning.
+ * Mitigates user enumeration via response timing.
  */
 function attempt_login(string $identifier, string $password): array
 {
     $ip = get_client_ip();
+    $cleanId = strtolower(trim($identifier));
 
-    if (is_rate_limited($identifier, $ip)) {
+    if (is_rate_limited($cleanId, $ip)) {
         return [
             'success' => false,
             'error'   => 'Too many failed attempts. Please wait 5 minutes before trying again.',
@@ -353,27 +389,29 @@ function attempt_login(string $identifier, string $password): array
             'SELECT id, username, email, password, role, is_active, email_verified_at, session_version
              FROM users WHERE username = ? OR email = ? LIMIT 1'
         );
-        $stmt->execute([$identifier, $identifier]);
+        $stmt->execute([$cleanId, $cleanId]);
         $user = $stmt->fetch();
 
         if ($user) {
-            if ((int) $user['is_active'] !== 1) {
-                record_failed_attempt($identifier, $ip);
-                return [
-                    'success' => false,
-                    'error'   => 'This account has been deactivated.',
-                ];
-            }
-
-            if ($user['email_verified_at'] === null) {
-                record_failed_attempt($identifier, $ip);
-                return [
-                    'success' => false,
-                    'error'   => 'Email verification required. Please check your inbox or activation link.',
-                ];
-            }
-
+            // Timing-equalized password verification
             if (password_verify($password, $user['password'])) {
+                // Post-password verification status checks
+                if ((int) $user['is_active'] !== 1) {
+                    record_failed_attempt($cleanId, $ip);
+                    return [
+                        'success' => false,
+                        'error'   => 'This account has been deactivated.',
+                    ];
+                }
+
+                if ($user['email_verified_at'] === null) {
+                    record_failed_attempt($cleanId, $ip);
+                    return [
+                        'success' => false,
+                        'error'   => 'Email verification required. Please check your inbox or activation link.',
+                    ];
+                }
+
                 if (password_needs_rehash($user['password'], PASSWORD_DEFAULT)) {
                     $newHash = password_hash($password, PASSWORD_DEFAULT);
                     $updateStmt = $pdo->prepare('UPDATE users SET password = ? WHERE id = ?');
@@ -382,9 +420,9 @@ function attempt_login(string $identifier, string $password): array
 
                 session_regenerate_id(true);
                 rotate_csrf_token();
-                clear_failed_attempts($identifier, $ip);
+                clear_failed_attempts($cleanId, $ip);
 
-                // Strictly enforce: only 'admin' username receives admin role
+                // Strictly enforce: only 'admin' username with role 'admin' receives admin role
                 $assignedRole = ($user['username'] === 'admin' && $user['role'] === 'admin') ? 'admin' : 'user';
 
                 $_SESSION['user_id']         = (int) $user['id'];
@@ -398,6 +436,9 @@ function attempt_login(string $identifier, string $password): array
 
                 return ['success' => true, 'error' => ''];
             }
+        } else {
+            // User does not exist: execute dummy verification to ensure constant-time response (anti-enumeration)
+            password_verify($password, DUMMY_BCRYPT_HASH);
         }
     } catch (Throwable $e) {
         error_log('[Authentication Exception] ' . $e->getMessage());
@@ -407,7 +448,7 @@ function attempt_login(string $identifier, string $password): array
         ];
     }
 
-    record_failed_attempt($identifier, $ip);
+    record_failed_attempt($cleanId, $ip);
 
     return [
         'success' => false,
@@ -417,20 +458,25 @@ function attempt_login(string $identifier, string $password): array
 
 /**
  * Request a secure password reset link.
- * Implements account enumeration defense by always returning a generic response.
+ * Implements account enumeration defense by always returning an identical generic response.
  * Stores only the SHA-256 hash of the token in the database.
+ * In production, the raw token is NEVER returned.
  */
 function request_password_reset(string $identifier): array
 {
     $ip = get_client_ip();
+    $cleanId = strtolower(trim($identifier));
     $genericMessage = 'If the account exists and is active, a password reset link has been generated.';
 
-    if (is_rate_limited($identifier, $ip)) {
+    if (is_rate_limited('reset:' . $cleanId, $ip)) {
         return [
             'success' => false,
             'message' => 'Too many requests. Please wait a few minutes before trying again.',
         ];
     }
+
+    // Always record rate-limit attempt on password reset request to throttle spamming
+    record_failed_attempt('reset:' . $cleanId, $ip);
 
     try {
         $pdo = get_pdo();
@@ -438,7 +484,7 @@ function request_password_reset(string $identifier): array
             'SELECT id, username, email, is_active, email_verified_at FROM users
              WHERE username = ? OR email = ? LIMIT 1'
         );
-        $stmt->execute([$identifier, $identifier]);
+        $stmt->execute([$cleanId, $cleanId]);
         $user = $stmt->fetch();
 
         // Only generate reset token if account exists, is active, and verified
@@ -453,15 +499,15 @@ function request_password_reset(string $identifier): array
             );
             $invalidateStmt->execute([(int) $user['id']]);
 
-            // Store SHA-256 hash only. Raw token is never written to disk/database.
+            // Store SHA-256 hash only. Raw token is never stored in DB.
             $insertStmt = $pdo->prepare(
                 'INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, created_at, requested_ip)
                  VALUES (?, ?, ?, NOW(), ?)'
             );
             $insertStmt->execute([(int) $user['id'], $tokenHash, $expiresAt, $ip]);
 
-            // In development, provide the raw token in memory for local one-click testing
-            if (APP_ENV === 'development') {
+            // ONLY in local development with active debug, expose token in memory for local testing
+            if (APP_ENV === 'development' && APP_DEBUG) {
                 return [
                     'success'   => true,
                     'message'   => $genericMessage,
@@ -469,6 +515,9 @@ function request_password_reset(string $identifier): array
                     'dev_email' => (string) $user['email'],
                 ];
             }
+        } else {
+            // User does not exist: simulate cryptographic token work for constant-time behavior
+            hash('sha256', bin2hex(random_bytes(32)));
         }
     } catch (Throwable $e) {
         error_log('[Password Reset Request Error] ' . $e->getMessage());
@@ -508,17 +557,14 @@ function verify_password_reset_token(string $rawToken): ?array
             return null;
         }
 
-        // Must not have been used
         if ($record['used_at'] !== null) {
             return null;
         }
 
-        // Must not be expired
         if (strtotime($record['expires_at']) < time()) {
             return null;
         }
 
-        // User must be active
         if ((int) $record['is_active'] !== 1) {
             return null;
         }
@@ -539,6 +585,13 @@ function complete_password_reset(string $rawToken, string $newPassword): array
 {
     $ip = get_client_ip();
 
+    if (is_rate_limited('pw_reset_exec', $ip)) {
+        return [
+            'success' => false,
+            'error'   => 'Too many reset attempts. Please wait 5 minutes.',
+        ];
+    }
+
     if (!validate_password_length($newPassword)) {
         return [
             'success' => false,
@@ -548,6 +601,7 @@ function complete_password_reset(string $rawToken, string $newPassword): array
 
     $tokenData = verify_password_reset_token($rawToken);
     if ($tokenData === null) {
+        record_failed_attempt('pw_reset_exec', $ip);
         return [
             'success' => false,
             'error'   => 'This password reset link is invalid, has expired, or has already been used.',
@@ -568,6 +622,7 @@ function complete_password_reset(string $rawToken, string $newPassword): array
 
         if ($updateToken->rowCount() === 0) {
             $pdo->rollBack();
+            record_failed_attempt('pw_reset_exec', $ip);
             return [
                 'success' => false,
                 'error'   => 'Token was already consumed by another request.',
@@ -583,6 +638,7 @@ function complete_password_reset(string $rawToken, string $newPassword): array
         $pdo->commit();
 
         clear_failed_attempts($tokenData['username'], $ip);
+        clear_failed_attempts('pw_reset_exec', $ip);
         error_log("[Password Reset] Password reset completed successfully for User ID {$tokenData['user_id']}.");
 
         return [
@@ -604,11 +660,20 @@ function complete_password_reset(string $rawToken, string $newPassword): array
 /**
  * Administrative password reset for a target user.
  * Restricted strictly to admins. Never reveals the previous password.
+ * Restricts admin from resetting their own account via this endpoint to prevent unattended console takeover.
  * Atomically updates password and increments session_version to revoke sessions.
  */
 function admin_reset_user_password(int $targetUserId, string $newPassword): array
 {
     require_admin();
+
+    // Prevent resetting the current administrator account via the general user reset tool
+    if ($targetUserId === (int) ($_SESSION['user_id'] ?? 0)) {
+        return [
+            'success' => false,
+            'error'   => 'Self-password reset via user management is restricted. Use the account security settings or recovery flow with current credential verification.',
+        ];
+    }
 
     if (!validate_password_length($newPassword)) {
         return [

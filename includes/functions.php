@@ -16,9 +16,9 @@ if (!defined('APP_SECURE')) {
 
 /**
  * Emit defense-in-depth HTTP security headers directly from PHP.
- * Works uniformly across Apache, Nginx, Caddy, and PHP's built-in server.
+ * Works uniformly across Apache, Nginx, Caddy, and reverse proxies.
  */
-function send_security_headers(): void
+function send_security_headers(string $referrerPolicy = 'strict-origin-when-cross-origin'): void
 {
     if (headers_sent()) {
         return;
@@ -26,16 +26,36 @@ function send_security_headers(): void
 
     header('X-Content-Type-Options: nosniff');
     header('X-Frame-Options: DENY');
-    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('X-XSS-Protection: 0');
+    header('Referrer-Policy: ' . $referrerPolicy);
     header('Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()');
 
     // Strict Content Security Policy
     header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self';");
 
-    // HSTS (HTTP Strict Transport Security) only when served over HTTPS
-    if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
+    // HSTS (HTTP Strict Transport Security) when served over HTTPS (including behind reverse proxies)
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+               ((int)($_SERVER['SERVER_PORT'] ?? 80) === 443) ||
+               (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+
+    if ($isHttps) {
         header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
     }
+}
+
+/**
+ * Emit anti-caching HTTP headers for sensitive authentication and reset endpoints.
+ * Ensures tokens and credentials are never persisted in browser history or proxy caches.
+ */
+function send_no_cache_headers(): void
+{
+    if (headers_sent()) {
+        return;
+    }
+
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Pragma: no-cache');
+    header('Expires: 0');
 }
 
 /**
@@ -155,9 +175,15 @@ function get_client_ip(): string
  */
 function redirect(string $path): never
 {
-    $path = str_replace(["\r", "\n"], '', $path);
+    $path = str_replace(["\r", "\n", "\0"], '', $path);
 
-    if (preg_match('#^(https?:|//|javascript:|data:)#i', $path)) {
+    // Disallow absolute schemes, protocol-relative (//), Windows UNC paths (\\), or directory traversal tricks
+    if (preg_match('#^(https?:|//|\\\\|javascript:|data:)#i', $path) || str_starts_with($path, '/\\')) {
+        $path = 'index.php';
+    }
+
+    // Only allow alphanumeric, dash, underscore, slash, dot, question mark, equal, ampersand
+    if (!preg_match('#^[a-zA-Z0-9_\-\./\?&=]+$#', $path)) {
         $path = 'index.php';
     }
 

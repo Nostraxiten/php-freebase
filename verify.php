@@ -4,6 +4,7 @@
  * ----------
  * Email verification endpoint.
  * Validates cryptographic tokens and activates user accounts.
+ * Hardened with Referrer-Policy: no-referrer and cache suppression.
  */
 
 declare(strict_types=1);
@@ -12,7 +13,8 @@ define('APP_SECURE', true);
 
 require_once __DIR__ . '/includes/auth.php';
 
-send_security_headers();
+send_security_headers('no-referrer');
+send_no_cache_headers();
 start_secure_session();
 
 $token = trim((string) ($_GET['token'] ?? ''));

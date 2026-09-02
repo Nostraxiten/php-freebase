@@ -5,6 +5,7 @@
  * Password reset execution endpoint.
  * Validates the single-use token against stored SHA-256 hashes, updates the password,
  * increments the account session version to invalidate old sessions, and consumes the token.
+ * Hardened with Referrer-Policy: no-referrer and strict cache suppression.
  */
 
 declare(strict_types=1);
@@ -13,7 +14,8 @@ define('APP_SECURE', true);
 
 require_once __DIR__ . '/includes/auth.php';
 
-send_security_headers();
+send_security_headers('no-referrer');
+send_no_cache_headers();
 start_secure_session();
 
 $token = trim((string) ($_GET['token'] ?? ($_POST['token'] ?? '')));
@@ -119,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <form method="post" action="reset-password.php" class="auth-form" novalidate autocomplete="off">
                 <?= csrf_field() ?>
-                <input type="hidden" name="token" value="<?= e($token) ?>">
+                <input type="hidden" name="token" id="reset-token-field" value="<?= e($token) ?>">
 
                 <div class="form-group">
                     <label for="password">New Password <span class="label-hint">(min 8 characters)</span></label>
@@ -167,6 +169,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </main>
 </div>
 
+<script>
+// Clear token from browser address bar after page load to prevent history/shoulder leakage
+if (window.history.replaceState && window.location.search.includes('token=')) {
+    window.history.replaceState({}, document.title, window.location.pathname);
+}
+</script>
 <script src="js/script.js"></script>
 </body>
 </html>

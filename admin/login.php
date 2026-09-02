@@ -14,6 +14,7 @@ define('APP_SECURE', true);
 require_once __DIR__ . '/../includes/auth.php';
 
 send_security_headers();
+send_no_cache_headers();
 start_secure_session();
 
 if (is_logged_in()) {
@@ -120,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </button>
         </form>
 
-        <?php if (APP_DEBUG): ?>
+        <?php if (APP_ENV === 'development' && APP_DEBUG): ?>
             <div class="dev-notice">
                 <div class="dev-badge">DEVELOPMENT NOTICE</div>
                 <p>Default admin credentials: <code>admin</code> / <code>admin123</code></p>
@@ -129,9 +130,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <footer class="auth-footer">
             <p>Need an account? <a href="../register.php" class="link-accent">Register here</a></p>
-            <?php if (ADMIN_RECOVERY_SECRET !== ''): ?>
-                <p><a href="../emergency-reset.php" class="link-muted text-sm">Emergency Admin Reset</a></p>
-            <?php endif; ?>
             <a href="../index.php" class="link-muted">&larr; Return to Homepage</a>
         </footer>
     </main>

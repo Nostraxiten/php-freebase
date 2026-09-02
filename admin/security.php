@@ -15,6 +15,7 @@ define('APP_SECURE', true);
 require_once __DIR__ . '/../includes/auth.php';
 
 send_security_headers();
+send_no_cache_headers();
 start_secure_session();
 require_admin();
 
@@ -22,7 +23,8 @@ $username = (string) ($_SESSION['username'] ?? 'admin');
 $role     = (string) ($_SESSION['role'] ?? 'admin');
 
 $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
-           ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443);
+           ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443) ||
+           (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
 $emergencyResetActive = (ADMIN_RECOVERY_SECRET !== '');
 

@@ -3,7 +3,8 @@
  * config.php
  * -----------
  * Central configuration file for PHP FreeBase.
- * Loads environment variables from .env if present, or falls back to secure defaults.
+ * Production-Secure by Default: strictly enforces secure defaults, disables debug
+ * output in production, and prevents information disclosure.
  * Direct access to this file is blocked by PHP guard and .htaccess.
  */
 
@@ -31,7 +32,6 @@ if (!defined('APP_SECURE')) {
 
     foreach ($lines as $line) {
         $line = trim($line);
-        // Ignore comments and empty lines
         if ($line === '' || str_starts_with($line, '#')) {
             continue;
         }
@@ -44,7 +44,6 @@ if (!defined('APP_SECURE')) {
         $name  = trim(substr($line, 0, $pos));
         $value = trim(substr($line, $pos + 1));
 
-        // Strip surrounding single or double quotes
         if (strlen($value) >= 2 && (
             (str_starts_with($value, '"') && str_ends_with($value, '"')) ||
             (str_starts_with($value, "'") && str_ends_with($value, "'"))
@@ -70,11 +69,33 @@ function env_get(string $key, mixed $default = null): mixed
     return $val;
 }
 
-// --- App Settings ---
+// --- Environment & App Identity ---
+// Secure default: if APP_ENV is unspecified or unrecognized, strictly enforce 'production'
+$rawEnv = strtolower(trim((string) env_get('APP_ENV', 'production')));
+define('APP_ENV', $rawEnv === 'development' ? 'development' : 'production');
+
+// In production, APP_DEBUG is unconditionally FALSE regardless of any environment flag.
+$rawDebug = (bool) env_get('APP_DEBUG', false);
+define('APP_DEBUG', (APP_ENV === 'development') && $rawDebug);
+
 define('APP_NAME', (string) env_get('APP_NAME', 'PHP FreeBase'));
-define('APP_ENV', (string) env_get('APP_ENV', 'development')); // 'development' or 'production'
-define('APP_DEBUG', APP_ENV === 'development');
 define('APP_URL', (string) env_get('APP_URL', 'http://localhost:8000'));
+
+// --- Production Environment Sanity Verification ---
+if (APP_ENV === 'production') {
+    $criticalMissing = [];
+    if (env_get('DB_NAME') === null || env_get('DB_NAME') === '') {
+        $criticalMissing[] = 'DB_NAME';
+    }
+    if (env_get('DB_USER') === null || env_get('DB_USER') === '') {
+        $criticalMissing[] = 'DB_USER';
+    }
+    if (!empty($criticalMissing)) {
+        error_log('[FATAL PRODUCTION CONFIG] Missing critical environment variables: ' . implode(', ', $criticalMissing));
+        http_response_code(500);
+        die('System configuration error. Service unavailable.');
+    }
+}
 
 // --- Database Settings ---
 define('DB_HOST', (string) env_get('DB_HOST', '127.0.0.1'));
@@ -92,13 +113,16 @@ define('LOGIN_MAX_ATTEMPTS', (int) env_get('LOGIN_MAX_ATTEMPTS', 5));
 define('LOGIN_LOCKOUT_SECONDS', (int) env_get('LOGIN_LOCKOUT_SECONDS', 300)); // 5 minutes
 define('RESET_TOKEN_LIFETIME', (int) env_get('RESET_TOKEN_LIFETIME', 3600));   // 1 hour
 define('VERIFY_TOKEN_LIFETIME', (int) env_get('VERIFY_TOKEN_LIFETIME', 86400)); // 24 hours
+
+// Emergency secret: strictly from environment, no default, never hardcoded
 define('ADMIN_RECOVERY_SECRET', (string) env_get('ADMIN_RECOVERY_SECRET', ''));
 
-// --- Error Reporting Configuration ---
+// --- Error Reporting & Information Disclosure Defense ---
 if (APP_DEBUG) {
     error_reporting(E_ALL);
     ini_set('display_errors', '1');
 } else {
+    // In production: zero error display, zero stack traces, log errors to server log only
     error_reporting(0);
     ini_set('display_errors', '0');
     ini_set('log_errors', '1');

@@ -14,19 +14,22 @@ define('APP_SECURE', true);
 require_once __DIR__ . '/../includes/auth.php';
 
 send_security_headers();
+send_no_cache_headers();
 start_secure_session();
 require_login();
 
 $username       = (string) ($_SESSION['username'] ?? 'User');
 $email          = (string) ($_SESSION['email'] ?? '');
 $role           = (string) ($_SESSION['role'] ?? 'user');
+$currentUserId  = (int) ($_SESSION['user_id'] ?? 0);
 $sessionVer     = (int) ($_SESSION['session_version'] ?? 1);
 $isAdmin        = is_admin();
 $sessionCreated = date('H:i:s d/m/Y', (int) ($_SESSION['created_at'] ?? time()));
 $lastActivity   = date('H:i:s', (int) ($_SESSION['last_activity'] ?? time()));
 
 $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
-           ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443);
+           ((int) ($_SERVER['SERVER_PORT'] ?? 80) === 443) ||
+           (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
 
 $dbConnected = is_database_connected();
 $allUsers = [];
@@ -139,7 +142,6 @@ if ($dbConnected && $isAdmin) {
                 <span class="badge badge-muted">Direct</span>
             </div>
             <div class="stat-value text-mono"><?= e(get_client_ip()) ?></div>
-            <!-- Runtime accurate transport layer report (no static false claim) -->
             <div class="stat-meta">
                 <?= $isHttps ? 'TLS Active (Encrypted)' : 'Plaintext HTTP (Insecure)' ?>
             </div>
@@ -188,12 +190,16 @@ if ($dbConnected && $isAdmin) {
                                         <?php endif; ?>
                                     </td>
                                     <td>
-                                        <form method="post" action="reset-user-password.php" class="inline-reset-form">
-                                            <?= csrf_field() ?>
-                                            <input type="hidden" name="target_user_id" value="<?= (int) $u['id'] ?>">
-                                            <input type="password" name="new_password" placeholder="New pass (min 8)" minlength="8" maxlength="128" required class="input-inline">
-                                            <button type="submit" class="btn btn-sm btn-secondary" onclick="return confirm('Reset password for this user? All existing sessions will be invalidated.');">Set Password</button>
-                                        </form>
+                                        <?php if ((int) $u['id'] === $currentUserId): ?>
+                                            <span class="badge badge-muted">Current Session (Self-reset restricted)</span>
+                                        <?php else: ?>
+                                            <form method="post" action="reset-user-password.php" class="inline-reset-form">
+                                                <?= csrf_field() ?>
+                                                <input type="hidden" name="target_user_id" value="<?= (int) $u['id'] ?>">
+                                                <input type="password" name="new_password" placeholder="New pass (min 8)" minlength="8" maxlength="128" required class="input-inline">
+                                                <button type="submit" class="btn btn-sm btn-secondary" onclick="return confirm('Reset password for this user? All existing sessions will be invalidated.');">Set Password</button>
+                                            </form>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

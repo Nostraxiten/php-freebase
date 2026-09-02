@@ -3,9 +3,9 @@
  * emergency-reset.php
  * -------------------
  * Offline Emergency Administrator Password Reset.
- * Enabled ONLY when the ADMIN_RECOVERY_SECRET environment variable is populated.
+ * Enabled ONLY when ADMIN_RECOVERY_SECRET is explicitly configured in the environment.
+ * If disabled or unconfigured, completely returns HTTP 404 without leaking configuration details.
  * Uses constant-time hash comparison and rate limiting to prevent brute-force attacks.
- * Never stores or reveals plaintext passwords or the secret itself.
  */
 
 declare(strict_types=1);
@@ -14,17 +14,21 @@ define('APP_SECURE', true);
 
 require_once __DIR__ . '/includes/auth.php';
 
-send_security_headers();
+// If emergency recovery secret is not configured, completely disable endpoint with generic 404
+if (ADMIN_RECOVERY_SECRET === '') {
+    http_response_code(404);
+    die('<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.</p></body></html>');
+}
+
+send_security_headers('no-referrer');
+send_no_cache_headers();
 start_secure_session();
 
-$isConfigured = (ADMIN_RECOVERY_SECRET !== '');
 $error = '';
 $success = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!$isConfigured) {
-        $error = 'Emergency recovery is disabled on this server.';
-    } elseif (!verify_csrf($_POST['csrf_token'] ?? null)) {
+    if (!verify_csrf($_POST['csrf_token'] ?? null)) {
         $error = 'Security verification failed. Please refresh and try again.';
     } else {
         $secret          = (string) ($_POST['recovery_secret'] ?? '');
@@ -53,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Emergency Admin Reset &mdash; <?= e(APP_NAME) ?></title>
+    <title>Emergency Recovery &mdash; <?= e(APP_NAME) ?></title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="auth-body">
@@ -69,18 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="subtitle">Offline administrator credential reset</p>
         </div>
 
-        <?php if (!$isConfigured): ?>
-            <div class="alert alert-danger" role="alert">
-                <span class="alert-message">Emergency Recovery Disabled</span>
-            </div>
-            <p>The emergency administrative recovery feature is currently disabled on this instance.</p>
-            <p class="subtitle">To enable it, set <code>ADMIN_RECOVERY_SECRET</code> in your server environment or <code>.env</code> file.</p>
-
-            <footer class="auth-footer">
-                <a href="admin/login.php" class="link-muted">&larr; Return to Sign In</a>
-            </footer>
-
-        <?php elseif ($success): ?>
+        <?php if ($success): ?>
             <div class="alert alert-success" role="alert">
                 <span class="alert-message">The administrator password was reset successfully. All active sessions have been invalidated.</span>
             </div>

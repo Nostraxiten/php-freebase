@@ -4,7 +4,8 @@
  * -------------------
  * Password recovery request endpoint.
  * Protects against account enumeration by always returning a generic response.
- * In development mode, displays an instant activation link for local testing.
+ * In local development with debug active, displays an instant activation link.
+ * In production, the raw token is NEVER displayed on screen or logged.
  */
 
 declare(strict_types=1);
@@ -14,6 +15,7 @@ define('APP_SECURE', true);
 require_once __DIR__ . '/includes/auth.php';
 
 send_security_headers();
+send_no_cache_headers();
 start_secure_session();
 
 if (is_logged_in()) {
@@ -37,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $res = request_password_reset($identifierVal);
             $message = $res['message'];
-            if (!empty($res['dev_token'])) {
+            if (!empty($res['dev_token']) && APP_ENV === 'development' && APP_DEBUG) {
                 $devToken = $res['dev_token'];
                 $devEmail = $res['dev_email'] ?? '';
             }
@@ -78,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <span class="alert-message"><?= e($message) ?></span>
             </div>
 
-            <?php if ($devToken !== ''): ?>
+            <?php if (APP_ENV === 'development' && APP_DEBUG && $devToken !== ''): ?>
                 <div class="verification-box">
                     <div class="box-title">LOCAL DEVELOPMENT RESET LINK</div>
                     <p>Since the application is running in local development mode, use this link to complete the reset for <code><?= e($devEmail) ?></code>:</p>
