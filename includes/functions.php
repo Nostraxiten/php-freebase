@@ -89,7 +89,7 @@ function validate_username(string $username): bool
 function validate_password_length(string $password): bool
 {
     $len = strlen($password);
-    return $len >= 8 && $len <= 128;
+    return $len >= 4 && $len <= 128;
 }
 
 /**

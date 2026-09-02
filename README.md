@@ -72,10 +72,10 @@ All default accounts are pre-verified and loaded into the database during setup:
 
 | Username | Password | Role | Capabilities in Web Application |
 | :--- | :--- | :--- | :--- |
-| **`root`** | **`root`** | `superadmin` | **Super Administrator**: Holds the highest privileges. Can elevate any `user` to `admin`, revoke `admin` back to `user`, access the Security Console, and reset user passwords. |
-| **`admin`** | **`password`** | `admin` | **System Administrator**: Can inspect runtime security telemetry, monitor brute force attempts, and perform administrative password resets. Cannot modify roles. |
-| **`user`** | **`user`** | `user` | **Standard Member**: Authenticated member portal access with session diagnostics. |
-| **`hacker`** | **`hacker`** | `user` | **Audit / Test Persona**: Pre-seeded standard account for testing privilege escalation, rate-limiting lockouts, and credential resets. |
+| **`root`** | **`password123`** | `superadmin` | **Super Administrator**: Holds the highest privileges. Can elevate any `user` to `admin`, revoke `admin` back to `user`, access the Security Console, and reset user passwords. |
+| **`admin`** | **`password123`** | `admin` | **System Administrator**: Can inspect runtime security telemetry, monitor brute force attempts, and perform administrative password resets. Cannot modify roles. |
+| **`user`** | **`password123`** | `user` | **Standard Member**: Authenticated member portal access with session diagnostics. |
+| **`hacker`** | **`password123`** | `user` | **Audit / Test Persona**: Pre-seeded standard account for testing privilege escalation, rate-limiting lockouts, and credential resets. |
 
 ### Database Credentials (Port 3306)
 

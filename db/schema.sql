@@ -65,17 +65,18 @@ CREATE TABLE IF NOT EXISTS `login_attempts` (
 -- -----------------------------------------------------------------------------
 -- Default Lab Accounts (Pre-configured for Security Lab / CTF Testing)
 -- -----------------------------------------------------------------------------
--- 1. root   : pass="root"     (Role: superadmin - elevated web permission manager)
--- 2. admin  : pass="password" (Role: admin - administration & security console)
--- 3. user   : pass="user"     (Role: user - standard member account)
--- 4. hacker : pass="hacker"   (Role: user - standard member test account)
+-- Default password for ALL accounts: "password123"
+-- 1. root   : pass="password123" (Role: superadmin - elevated web permission manager)
+-- 2. admin  : pass="password123" (Role: admin - administration & security console)
+-- 3. user   : pass="password123" (Role: user - standard member account)
+-- 4. hacker : pass="password123" (Role: user - standard member test account)
 -- -----------------------------------------------------------------------------
 INSERT INTO `users` (`username`, `email`, `password`, `role`, `is_active`, `email_verified_at`, `session_version`)
 VALUES 
-    ('root',   'root@freebase.local',   '$2b$10$u.CWjdTo.4Q7Bxy7HJ1Q2uKsIbvZYJHfa2tbpyuzSnPNsJu4vQKjy', 'superadmin', 1, CURRENT_TIMESTAMP, 1),
-    ('admin',  'admin@freebase.local',  '$2b$10$tzX3fvbhM7GAXtkQk32hNu86tLhlf90vnYx/XneMBGsRR2fwKYGHC', 'admin',      1, CURRENT_TIMESTAMP, 1),
-    ('user',   'user@freebase.local',   '$2b$10$0vZAfCGx4HdqJobNBi7usQ7iGoYf7xPsM5Da4psNkpdTNXcDLlu', 'user',       1, CURRENT_TIMESTAMP, 1),
-    ('hacker', 'hacker@freebase.local', '$2b$10$RKsr0DD9cN998CI29BnRleu3jUdAPLq6IhzjDOTCtfbdWCZGLM35i', 'user',       1, CURRENT_TIMESTAMP, 1)
+    ('root',   'root@freebase.local',   '$2b$10$PFr2nivOo.G17C1/oRdwVOLU/obMaoxQPbke0pQV5oMIeZJuIl99.', 'superadmin', 1, CURRENT_TIMESTAMP, 1),
+    ('admin',  'admin@freebase.local',  '$2b$10$PFr2nivOo.G17C1/oRdwVOLU/obMaoxQPbke0pQV5oMIeZJuIl99.', 'admin',      1, CURRENT_TIMESTAMP, 1),
+    ('user',   'user@freebase.local',   '$2b$10$PFr2nivOo.G17C1/oRdwVOLU/obMaoxQPbke0pQV5oMIeZJuIl99.', 'user',       1, CURRENT_TIMESTAMP, 1),
+    ('hacker', 'hacker@freebase.local', '$2b$10$PFr2nivOo.G17C1/oRdwVOLU/obMaoxQPbke0pQV5oMIeZJuIl99.', 'user',       1, CURRENT_TIMESTAMP, 1)
 ON DUPLICATE KEY UPDATE
     `password` = VALUES(`password`),
     `role` = VALUES(`role`),

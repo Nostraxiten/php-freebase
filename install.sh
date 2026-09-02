@@ -430,7 +430,7 @@ chmod -R 755 "$SCRIPT_DIR"
 # so Apache (www-data) can traverse into the directory, preventing 403 Forbidden!
 d="$SCRIPT_DIR"
 while [ "$d" != "/" ] && [ "$d" != "." ]; do
-    chmod o+x "$d" 2>/dev/null || true
+    chmod 755 "$d" 2>/dev/null || chmod o+x "$d" 2>/dev/null || true
     d="$(dirname "$d")"
 done
 
@@ -521,10 +521,10 @@ echo -e "${BOLD}2. WEB APPLICATION LAB USERS:${NC}"
 echo -e "   +------------------+------------------+---------------------------------------------------+"
 echo -e "   | Username         | Password         | Role & Web Capabilities                           |"
 echo -e "   +------------------+------------------+---------------------------------------------------+"
-echo -e "   | ${YELLOW}root${NC}             | ${YELLOW}root${NC}             | ${BOLD}SUPER ADMIN${NC}: Can grant/revoke admin roles, reset  |"
-echo -e "   | ${CYAN}admin${NC}            | ${CYAN}password${NC}         | ${BOLD}ADMIN${NC}: Access Security Console, reset user pass |"
-echo -e "   | ${NC}user${NC}             | ${NC}user${NC}             | ${BOLD}USER${NC}: Standard Member Account                       |"
-echo -e "   | ${RED}hacker${NC}           | ${RED}hacker${NC}           | ${BOLD}USER${NC}: Target Member Test Persona                   |"
+echo -e "   | ${YELLOW}root${NC}             | ${YELLOW}password123${NC}      | ${BOLD}SUPER ADMIN${NC}: Can grant/revoke admin roles, reset  |"
+echo -e "   | ${CYAN}admin${NC}            | ${CYAN}password123${NC}      | ${BOLD}ADMIN${NC}: Access Security Console, reset user pass |"
+echo -e "   | ${NC}user${NC}             | ${NC}password123${NC}      | ${BOLD}USER${NC}: Standard Member Account                       |"
+echo -e "   | ${RED}hacker${NC}           | ${RED}password123${NC}      | ${BOLD}USER${NC}: Target Member Test Persona                   |"
 echo -e "   +------------------+------------------+---------------------------------------------------+"
 echo ""
 echo -e "${BOLD}3. DATABASE (MySQL 3306) LAB CREDENTIALS:${NC}"

@@ -35,8 +35,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Please enter your username/email and password.';
         } elseif (strlen($identifierVal) < 3 || strlen($identifierVal) > 100) {
             $error = 'Invalid identifier length.';
-        } elseif (!validate_password_length($password)) {
-            $error = 'Password must be between 8 and 128 characters.';
+        } elseif (strlen($password) > 128) {
+            $error = 'Password exceeds maximum length.';
         } else {
             $auth = attempt_login($identifierVal, $password);
             if ($auth['success']) {
@@ -107,7 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         id="password"
                         name="password"
                         autocomplete="current-password"
-                        minlength="8"
                         maxlength="128"
                         placeholder="••••••••••••"
                         required
@@ -124,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if (APP_ENV === 'development' && APP_DEBUG): ?>
             <div class="dev-notice">
                 <div class="dev-badge">DEVELOPMENT NOTICE</div>
-                <p>Default admin credentials: <code>admin</code> / <code>admin123</code></p>
+                <p>Default lab credentials: <code>root</code>, <code>admin</code>, <code>user</code>, <code>hacker</code> &bull; Password: <code>password123</code></p>
             </div>
         <?php endif; ?>
 
