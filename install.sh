@@ -293,8 +293,9 @@ FLUSH PRIVILEGES;
 EOF
 
 # Import schema with the 4 default lab users (root, admin, user, hacker)
+# Uses $MYSQL_ROOT which already contains the correct unix_socket connection command
 echo -e "[*] Importing schema and seeding default lab accounts..."
-$MYSQL_CMD -u root "${DB_NAME}" < "${SCRIPT_DIR}/db/schema.sql"
+$MYSQL_ROOT "${DB_NAME}" < "${SCRIPT_DIR}/db/schema.sql"
 
 echo -e "${GREEN}[+] MySQL Database initialized and listening on 0.0.0.0:3306.${NC}"
 
