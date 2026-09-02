@@ -1,6 +1,20 @@
 <?php
+/**
+ * login.php
+ * ---------
+ * Administrative and member authentication portal.
+ * Features CSRF protection, persistent brute-force mitigation,
+ * strict input validation, and neon aesthetics.
+ */
+
 declare(strict_types=1);
+
+define('APP_SECURE', true);
+
 require_once __DIR__ . '/../includes/auth.php';
+
+send_security_headers();
+send_no_cache_headers();
 start_secure_session();
 
 if (is_logged_in()) {
@@ -8,22 +22,28 @@ if (is_logged_in()) {
 }
 
 $error = '';
+$identifierVal = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verify_csrf($_POST['csrf_token'] ?? null)) {
-        $error = 'Invalid or expired form submission. Please try again.';
-    } elseif (too_many_attempts()) {
-        $error = 'Too many failed attempts. Please wait a few minutes before trying again.';
+        $error = 'Security verification failed. Please refresh and try again.';
     } else {
-        $username = sanitize_input($_POST['username'] ?? '');
-        $password = (string) ($_POST['password'] ?? '');
+        $identifierVal = sanitize_input((string) ($_POST['identifier'] ?? ''));
+        $password      = (string) ($_POST['password'] ?? '');
 
-        if ($username === '' || $password === '') {
-            $error = 'Please fill in both fields.';
-        } elseif (attempt_login($username, $password)) {
-            redirect('dashboard.php');
+        if ($identifierVal === '' || $password === '') {
+            $error = 'Please enter your username/email and password.';
+        } elseif (strlen($identifierVal) < 3 || strlen($identifierVal) > 100) {
+            $error = 'Invalid identifier length.';
+        } elseif (!validate_password_length($password)) {
+            $error = 'Password must be between 8 and 128 characters.';
         } else {
-            $error = 'Invalid username or password.';
+            $auth = attempt_login($identifierVal, $password);
+            if ($auth['success']) {
+                redirect('dashboard.php');
+            } else {
+                $error = $auth['error'];
+            }
         }
     }
 }
@@ -33,35 +53,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Login &mdash; <?= e(APP_NAME) ?></title>
+    <title>Sign In &mdash; <?= e(APP_NAME) ?></title>
     <link rel="stylesheet" href="../css/style.css">
 </head>
-<body>
+<body class="auth-body">
 
-<main class="container center">
-    <section class="card login-card">
-        <h1>Admin Login</h1>
+<div class="auth-wrapper">
+    <main class="card auth-card">
+        <div class="auth-header">
+            <div class="brand-badge">
+                <span class="badge-dot"></span>
+                <span><?= e(APP_NAME) ?></span>
+            </div>
+            <h1>Authentication</h1>
+            <p class="subtitle">Access your account</p>
+        </div>
 
         <?php if ($error !== ''): ?>
-            <p class="alert"><?= e($error) ?></p>
+            <div class="alert alert-danger" role="alert">
+                <span class="alert-message"><?= e($error) ?></span>
+                <button type="button" class="alert-close" aria-label="Dismiss alert">&times;</button>
+            </div>
         <?php endif; ?>
 
-        <form method="post" action="login.php" novalidate>
+        <form method="post" action="login.php" class="auth-form" novalidate autocomplete="off">
             <?= csrf_field() ?>
 
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username" autocomplete="username" required>
+            <div class="form-group">
+                <label for="identifier">Username or Email</label>
+                <div class="input-container">
+                    <input
+                        type="text"
+                        id="identifier"
+                        name="identifier"
+                        value="<?= e($identifierVal) ?>"
+                        autocomplete="username"
+                        maxlength="100"
+                        placeholder="Username or email"
+                        required
+                        autofocus
+                    >
+                </div>
+            </div>
 
-            <label for="password">Password</label>
-            <input type="password" id="password" name="password" autocomplete="current-password" required>
+            <div class="form-group">
+                <div class="label-row">
+                    <label for="password">Password</label>
+                    <a href="../forgot-password.php" class="link-muted text-sm">Forgot password?</a>
+                </div>
+                <div class="input-container">
+                    <input
+                        type="password"
+                        id="password"
+                        name="password"
+                        autocomplete="current-password"
+                        minlength="8"
+                        maxlength="128"
+                        placeholder="••••••••••••"
+                        required
+                    >
+                </div>
+            </div>
 
-            <button type="submit">Log in</button>
+            <button type="submit" class="btn btn-primary btn-block">
+                <span>Sign In</span>
+                <span class="arrow-icon" aria-hidden="true">&rarr;</span>
+            </button>
         </form>
 
-        <p class="hint">Default credentials: <code>admin</code> / <code>admin</code> &mdash; change this immediately after import.</p>
-        <p><a href="../index.php">&larr; Back to site</a></p>
-    </section>
-</main>
+        <?php if (APP_ENV === 'development' && APP_DEBUG): ?>
+            <div class="dev-notice">
+                <div class="dev-badge">DEVELOPMENT NOTICE</div>
+                <p>Default admin credentials: <code>admin</code> / <code>admin123</code></p>
+            </div>
+        <?php endif; ?>
 
+        <footer class="auth-footer">
+            <p>Need an account? <a href="../register.php" class="link-accent">Register here</a></p>
+            <a href="../index.php" class="link-muted">&larr; Return to Homepage</a>
+        </footer>
+    </main>
+</div>
+
+<script src="../js/script.js"></script>
 </body>
 </html>

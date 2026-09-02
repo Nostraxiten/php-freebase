@@ -2,186 +2,299 @@
 
 # PHP FreeBase
 
-**A free, secure-by-default PHP starter base.**
-Copy the folder, plug in a database, and start building — instead of staring at a project with 0 lines of code.
+**An Enterprise-Hardened, Secure-by-Design PHP Starter Architecture.**  
+Equipped with defense-in-depth security, database-backed brute force protection, user registration with expiring email verification, secure one-way password recovery, and a sleek Neon Dark UI.
 
 ![PHP](https://img.shields.io/badge/PHP-8.0%2B-777BB4?style=for-the-badge&logo=php&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-MariaDB-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
 ![License](https://img.shields.io/badge/license-Unlicense-blue?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-active-brightgreen?style=for-the-badge)
-![Security](https://img.shields.io/badge/SQLi-protected-critical?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-active-00f0ff?style=for-the-badge)
 
 </div>
 
 ---
 
-## Table of contents
+## Table of Contents
 
-- [What you get](#what-you-get)
+- [Overview & Key Features](#overview--key-features)
+- [Project Architecture](#project-architecture)
+- [Password Architecture & Recovery](#password-architecture--recovery)
 - [Requirements](#requirements)
-- [Setup (step by step)](#setup-step-by-step)
-- [Project layout](#project-layout)
-- [Troubleshooting](#troubleshooting)
-- [Security notes](#security-notes-read-before-deploying-anywhere-real)
+- [Quick Start Installation](#quick-start-installation)
+- [Configuration (.env)](#configuration-env)
+- [Database Schema & Migrations](#database-schema--migrations)
+- [Authentication & User Registration](#authentication--user-registration)
+- [Admin Security Console & User Management](#admin-security-console--user-management)
+- [Emergency Admin Recovery Secret](#emergency-admin-recovery-secret)
+- [Production Checklist](#production-checklist)
 - [License](#license)
 
 ---
 
-## What you get
+## Overview & Key Features
 
-- **Landing page** — `index.php`, public entry point, ready to gut and replace
-- **Admin panel** — `admin/`, working login, dashboard, logout
-- **Database layer** — PDO with real prepared statements, SQL injection is off the table by design
-- **Passwords** — `password_hash()` / `password_verify()`, never plain text
-- **CSRF protection** — every form ships with a synchronizer token
-- **XSS protection** — `e()` helper escapes all dynamic output
-- **Sessions** — hardened cookies: `HttpOnly`, `SameSite`, `secure` over HTTPS
-- **Brute-force throttle** — basic login rate-limiting out of the box
-- **Access control** — `.htaccess` blocks direct access to `includes/` and `db/`
-- **Database schema** — empty, ready-to-extend `db/schema.sql`
+PHP FreeBase provides a robust, production-ready starting point for building secure PHP applications without the overhead of heavy monolithic frameworks.
+
+- **Zero SQL Injection by Design**: Native PDO prepared statements exclusively, with emulated prepares disabled (`ATTR_EMULATE_PREPARES = false`).
+- **Database-Backed Brute-Force Rate Limiting**: Persistent throttling across IP addresses and usernames via `login_attempts`. Immune to session-drop attacks.
+- **Enterprise Session Hardening & Revocation**: Strict session mode (`session.use_strict_mode = 1`), `HttpOnly`, `SameSite=Lax`, dual idle/absolute timeouts, and per-account `session_version` invalidation.
+- **Secure One-Way Password Recovery**: Cryptographically sound reset workflow storing only SHA-256 token hashes, time-to-live expiration, single-use enforcement, and session termination.
+- **Zero Plaintext Password Recovery**: The system **never reveals, decrypts, or recovers** an existing password. Passwords are strictly one-way hashed using `password_hash()`.
+- **User Registration & Email Verification**: Secure registration system with username constraints (4 to 12 characters), expiring verification tokens, and automatic activation.
+- **Role Separation**: Strict role boundaries where administrative access is reserved exclusively for the system administrator.
+- **CSRF Defense with POST-Only Endpoints**: State-changing endpoints strictly require verified cryptographic synchronizer tokens, eliminating CSRF and forced logouts.
+- **Centralized HTTP Security Headers**: Content Security Policy (CSP), Frame-Ancestors/X-Frame-Options, X-Content-Type-Options, and Permissions-Policy emitted directly in PHP.
+- **Zero-Dependency .env Loader**: Native configuration loader supporting `.env` files and container environment variables.
+- **Futuristic Neon Dark UI**: High-contrast, responsive design system crafted with vanilla CSS variables, clean typography, and zero emoji clutter.
+
+---
+
+## Project Architecture
+
+```
+php-freebase/
+├── .env.example            Environment configuration template
+├── .gitignore              Prevents leaking .env, logs, and sensitive files
+├── .htaccess               Apache server hardening & file containment rules
+├── README.md               Complete project documentation
+├── SECURITY.md             Threat model & vulnerability report guidelines
+├── index.php               Public landing page ("Nothing here yet" placeholder)
+├── register.php            User registration with email verification flow
+├── verify.php              Cryptographic email token activation endpoint
+├── forgot-password.php     Password recovery request (anti-enumeration)
+├── reset-password.php      Password reset execution (SHA-256 token check)
+├── emergency-reset.php     Offline admin recovery via ADMIN_RECOVERY_SECRET
+├── admin/
+│   ├── login.php           Hardened sign-in portal (username or email)
+│   ├── dashboard.php       Admin & member dashboard with user password reset
+│   ├── reset-user-password.php POST-only admin password reset endpoint
+│   ├── security.php        Admin-only security architecture console
+│   └── logout.php          CSRF-protected POST-only logout endpoint
+├── css/
+│   └── style.css           Neon Dark UI design system (pure CSS)
+├── db/
+│   ├── .htaccess           Denies direct HTTP access
+│   └── schema.sql          Database tables: users, password_reset_tokens, login_attempts
+├── includes/
+│   ├── .htaccess           Denies direct HTTP access
+│   ├── auth.php            Authentication, recovery & session engine
+│   ├── config.php          Central configuration & lightweight .env parser
+│   ├── db.php              PDO singleton with safe exception handling
+│   └── functions.php       Security helpers: CSP headers, validation, CSRF
+└── js/
+    └── script.js           Lightweight accessible client interactions
+```
+
+---
+
+## Password Architecture & Recovery
+
+> [!IMPORTANT]
+> **Zero Plaintext Recovery Guarantee**:  
+> Passwords in PHP FreeBase are strictly one-way hashes generated using `password_hash($password, PASSWORD_DEFAULT)`. There is **no mechanism, master password, or backdoor** that can reveal, decrypt, or recover an existing user's original plaintext password. The platform only supports **one-way password resets**.
+
+### Password Reset Flow (`forgot-password.php` & `reset-password.php`)
+
+1. **User Request (`forgot-password.php`)**:
+   - The user enters their username or email.
+   - The response is **always uniform and generic**:  
+     `"If the account exists and is active, a password reset link has been generated."`  
+     This completely prevents account enumeration.
+   - If the account exists, a 32-byte cryptographic random token is generated: `bin2hex(random_bytes(32))`.
+   - **Only the SHA-256 hash** of this token is stored in the database (`password_reset_tokens.token_hash`). Raw tokens are never stored on disk or in the database.
+   - The token has an expiration window of 1 hour (`RESET_TOKEN_LIFETIME = 3600`).
+   - Any previously unused reset tokens for that user are immediately invalidated.
+
+2. **Local Development Delivery**:
+   - When `APP_ENV=development`, `forgot-password.php` displays a local one-click activation card containing the reset URL.
+   - In production (`APP_ENV=production`), the link is dispatched solely through a configured mailer and never displayed on screen.
+
+3. **Reset Execution (`reset-password.php`)**:
+   - The token presented in the URL is hashed with SHA-256 and compared against unconsumed, non-expired tokens in `password_reset_tokens`.
+   - The new password is validated (minimum 8 characters, maximum 128 characters) and hashed.
+   - The token is consumed atomically: `used_at = NOW()`.
+   - The user's password hash is updated.
+
+4. **Automatic Session Invalidation (`session_version`)**:
+   - The user record in `users` contains a `session_version` column (default 1).
+   - Upon completing a password reset, `session_version` is incremented by 1.
+   - Active user sessions store the version observed at login (`$_SESSION['session_version']`).
+   - Every authenticated request verifies that `$_SESSION['session_version']` matches the database.
+   - If a mismatch is detected (e.g., password changed), the old session is immediately destroyed.
 
 ---
 
 ## Requirements
 
-- PHP 8.0+
-- MySQL / MariaDB
-- Apache with `mod_rewrite` and `mod_headers` (for the `.htaccess` rules)
-  — on Nginx, port the rules in `.htaccess` to your server block
+- **PHP 8.0 or higher** (PHP 8.1, 8.2, 8.3 fully supported)
+- **PDO PHP Extension** with PDO_MYSQL driver
+- **MySQL 5.7+ / 8.0+** or **MariaDB 10.3+**
+- **Apache** (with `mod_rewrite` and `mod_headers`) or **Nginx** / **Caddy**
 
 ---
 
-## Setup (step by step)
+## Quick Start Installation
 
-### 1 · Get PHP and MySQL running
+### 1. Clone the repository
+```bash
+git clone https://github.com/Nostraxiten/php-freebase.git
+cd php-freebase
+```
 
-`python -m http.server` will **not** work here — it only serves static files and doesn't understand PHP.
+### 2. Configure your environment
+Create a local `.env` file from the provided template:
+```bash
+cp .env.example .env
+```
+Edit `.env` to match your local database credentials:
+```ini
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=freebase
+DB_USER=root
+DB_PASS=your_db_password
+APP_ENV=development
+```
 
-- **macOS** — `brew install php mysql && brew services start mysql`
-- **Debian/Ubuntu** — `sudo apt install php mysql-server && sudo systemctl start mysql`
-- **Windows** — [XAMPP](https://www.apachefriends.org/) or [Laragon](https://laragon.org/), both bundle PHP + MySQL
-
-Check: `php -v` and `mysql -u root -p`
-
-### 2 · Import the schema
-
+### 3. Initialize the database
+Import `db/schema.sql` into your MySQL/MariaDB server:
 ```bash
 mysql -u root -p < db/schema.sql
 ```
+This initializes the database, creates the `users`, `password_reset_tokens`, and `login_attempts` tables, and seeds the initial administrator account.
 
-Creates the `freebase` database, the `users` table, and the default admin row.
-
-### 3 · Configure the connection
-
-Edit `includes/config.php` — set `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` to match your setup.
-
-### 4 · Run it locally
-
+### 4. Run locally
+Start PHP's built-in development server:
 ```bash
 php -S localhost:8000
 ```
+Open your browser and navigate to: `http://localhost:8000`
 
-Open `http://localhost:8000`. Note: PHP's built-in server doesn't read `.htaccess` — that only kicks in on real Apache hosting.
+### 5. Access Credentials
+- **Admin Portal**: `http://localhost:8000/admin/login.php`
+- **Default Admin Username**: `admin`
+- **Default Admin Password**: `admin123`
+- **Public Landing**: `http://localhost:8000/index.php`
+- **Create Account**: `http://localhost:8000/register.php`
+- **Forgot Password**: `http://localhost:8000/forgot-password.php`
 
-### 5 · Log in
+---
 
-`http://localhost:8000/admin/login.php`
+## Configuration (.env)
 
-```
-username: admin
-password: admin
-```
+PHP FreeBase includes a native, zero-dependency `.env` parser:
 
-### 6 · Change the default password
+```ini
+APP_ENV=development              # 'development' or 'production'
+APP_NAME="PHP FreeBase"
+APP_URL=http://localhost:8000
 
-Do this immediately — it's public, anyone with this base knows it.
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=freebase
+DB_USER=root
+DB_PASS=
+DB_CHARSET=utf8mb4
 
-```php
-<?php echo password_hash('your-new-password', PASSWORD_BCRYPT);
-```
+SESSION_NAME=freebase_sec_session
+SESSION_LIFETIME=3600            # Idle timeout in seconds (1 hour)
+SESSION_MAX_LIFETIME=28800       # Absolute timeout in seconds (8 hours)
 
-Then:
+LOGIN_MAX_ATTEMPTS=5             # Max failed attempts before lockout
+LOGIN_LOCKOUT_SECONDS=300        # Lockout window in seconds (5 minutes)
 
-```sql
-UPDATE users SET password = '<hash>' WHERE username = 'admin';
+RESET_TOKEN_LIFETIME=3600        # Reset token validity (1 hour)
+VERIFY_TOKEN_LIFETIME=86400      # Email verification token validity (24 hours)
+
+# Optional Emergency Admin Recovery Secret (Never commit to Git!)
+ADMIN_RECOVERY_SECRET=
 ```
 
 ---
 
-## Project layout
+## Database Schema & Migrations
 
-```
-php-freebase/
-├── index.php              Public landing page
-├── .htaccess               Security headers + blocks includes/ and db/
-├── css/style.css           Base styling
-├── js/script.js             Base JS, no dependencies
-├── includes/
-│   ├── config.php           DB + app settings (edit this)
-│   ├── db.php                PDO connection (prepared statements only)
-│   ├── functions.php         sanitize_input(), e(), CSRF helpers
-│   └── auth.php              Session handling, login/logout, throttling
-├── admin/
-│   ├── login.php
-│   ├── dashboard.php         Protected — requires login
-│   └── logout.php
-└── db/
-    └── schema.sql            users table + default admin row
-```
+### Users Table (`users`)
+Stores user accounts with role-based access control and session invalidation versioning:
+- `id`: Primary key (INT UNSIGNED AUTO_INCREMENT)
+- `username`: Unique username (VARCHAR 12, minimum 4 chars)
+- `email`: Unique email address (VARCHAR 100)
+- `password`: Secure bcrypt/Argon2 hash (VARCHAR 255)
+- `role`: Role indicator (`admin` or `user`)
+- `is_active`: Account enablement flag (TINYINT 1)
+- `email_verified_at`: Timestamp of account verification
+- `verification_token`: 64-character verification token
+- `verification_expires_at`: Expiration timestamp for email activation
+- `session_version`: Incrementing integer used to revoke concurrent sessions
+- `created_at` / `updated_at`: Audit timestamps
 
----
+### Password Reset Tokens Table (`password_reset_tokens`)
+Stores hashed tokens for password resets:
+- `id`: Primary key (BIGINT UNSIGNED AUTO_INCREMENT)
+- `user_id`: Foreign key to `users(id)` ON DELETE CASCADE
+- `token_hash`: SHA-256 hash of the 64-character hex token (CHAR 64)
+- `expires_at`: Expiration timestamp (1 hour default)
+- `used_at`: Timestamp when the token was consumed (single-use)
+- `created_at`: Creation timestamp
+- `requested_ip`: Requesting client IP address
 
-## Troubleshooting
-
-<details>
-<summary><strong>DB connection failed: SQLSTATE[HY000] [2002] No such file or directory</strong></summary>
-<br>
-
-MySQL isn't running, isn't installed, or PDO can't find its socket.
-
-1. Confirm MySQL is installed and started (see [step 1](#1--get-php-and-mysql-running)).
-2. Still failing? Force TCP instead of a socket — in `includes/config.php`:
-   ```php
-   define('DB_HOST', '127.0.0.1');
-   ```
-</details>
-
-<details>
-<summary><strong>PHP file downloads as raw text / shows source code in the browser</strong></summary>
-<br>
-
-You're serving the folder with something other than PHP (Python's `http.server`, a static file server, etc). Use `php -S localhost:8000` instead.
-</details>
-
-<details>
-<summary><strong>"Invalid or expired form submission" on login</strong></summary>
-<br>
-
-The CSRF token in your session expired or doesn't match. Reload `login.php` and try again.
-</details>
+### Rate Limiting Table (`login_attempts`)
+Tracks failed attempts for brute-force defense:
+- `id`: Primary key (BIGINT UNSIGNED AUTO_INCREMENT)
+- `ip_address`: Client IP address (VARCHAR 45, IPv4/IPv6)
+- `username`: Attempted target username/email (VARCHAR 50)
+- `attempted_at`: Timestamp of the attempt
 
 ---
 
-## Security notes (read before deploying anywhere real)
+## Admin Security Console & User Management
 
-This base gives you a sane, non-vulnerable starting point — not a finished product. Before going live, at minimum:
+### Security Telemetry (`admin/security.php`)
+Restricted strictly to the administrator (`require_admin()`):
+- Reports **real runtime TLS status** (accurately distinguishes plain HTTP from production HTTPS).
+- Documents active HTTP security headers (CSP, X-Frame-Options: DENY, nosniff, Permissions-Policy).
+- Live query of throttled brute-force attempts from `login_attempts`.
 
-- Change the default admin password (see [step 6](#6--change-the-default-password))
-- Serve everything over HTTPS — the session cookie only gets `secure` when `$_SERVER['HTTPS']` is set
-- Set `APP_ENV` to `production` in `includes/config.php` to stop leaking error details
-- Add real rate-limiting at the network layer (fail2ban, WAF, reverse proxy) — the built-in throttle is per-session only
-- Keep PHP and dependencies up to date
+### Admin Password Reset Capability (`admin/dashboard.php`)
+The administrator has access to a user management table with a **secure POST-only password reset tool**:
+- The administrator **never sees or accesses prior user passwords**.
+- Setting a new password generates a fresh `password_hash()` and increments `session_version`, invalidating the target user's existing sessions.
+- All actions are logged without ever exposing the password.
 
-Patterns in `db.php`, `functions.php`, and `auth.php` follow the OWASP SQL Injection Prevention Cheat Sheet and OWASP CSRF Prevention Cheat Sheet.
+---
+
+## Emergency Admin Recovery Secret
+
+An optional offline recovery mechanism is available via `emergency-reset.php`:
+- Configured by setting `ADMIN_RECOVERY_SECRET` in your environment or `.env` file.
+- When unset, the endpoint is **completely disabled**.
+- When configured, the secret is compared using constant-time `hash_equals()`.
+- The endpoint is rate-limited and audit-logged to prevent brute-force attacks.
+- This secret **cannot reveal passwords**; it only authorizes setting a new administrator password.
+
+---
+
+## Production Checklist
+
+Before deploying PHP FreeBase to a public production environment:
+
+1. **Change the Default Admin Password**:
+   Update `admin123` immediately after initial database setup.
+2. **Serve Exclusively over HTTPS**:
+   Enforces the `Secure` flag on session cookies and emits HSTS headers.
+3. **Switch to Production Environment**:
+   Set `APP_ENV=production` in your `.env` file to suppress diagnostic notices and enforce system logging.
+4. **Protect Configuration Files**:
+   Ensure `.env` and `.git` are not reachable over the web.
 
 ---
 
 ## License
 
-Do whatever you want with this. It's a base, not a product — no attribution required.
+This project is released under the **Unlicense** — public domain.
 
 <div align="center">
 
-Built by [@Nostraxiten](https://github.com/Nostraxiten)
+Maintained by [@Nostraxiten](https://github.com/Nostraxiten)
 
 </div>
