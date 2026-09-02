@@ -39,9 +39,9 @@ PHP FreeBase provides a robust, production-ready starting point for building sec
 - **User Registration & Email Verification**: Secure registration system with username constraints (4 to 12 characters), email verification tokens, and automatic status activation.
 - **Role Separation**: Strict role boundaries where administrative access is reserved exclusively for the system administrator.
 - **CSRF Defense with POST-Only Logout**: State-changing endpoints strictly require verified cryptographic synchronizer tokens, eliminating Logout CSRF.
-- **Centralized HTTP Security Headers**: Content Security Policy (CSP), Frame-Ancestors/X-Frame-Options, X-Content-Type-Options, and Permissions-Policy emitted directly in PHP.
+- **Centralized HTTP Security Headers**: Content Security Policy (CSP), Frame-Ancestors/X-Frame-Options, X-Content-Type-Options, and Permissions-Policy emitted directly in PHP (works on Apache, Nginx, and Caddy).
 - **Zero-Dependency .env Loader**: Native configuration loader supporting `.env` files and container environment variables.
-- **Futuristic Neon Dark UI**: High-contrast, responsive design system crafted with vanilla CSS variables, clean typography, and zero emoji clutter.
+- **Modern Minimalist Neon Dark UI**: High-contrast, responsive design system crafted with vanilla CSS variables, semantic HTML, clean typography, and zero emoji clutter.
 
 ---
 
