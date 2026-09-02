@@ -34,13 +34,13 @@ Equipped with defense-in-depth security, OWASP Top 10 mitigations, database-back
 
 PHP FreeBase provides a robust, production-ready starting point for building secure PHP applications without the weight and overhead of heavy monolithic frameworks.
 
-- 🛡️ **Zero SQL Injection by Design**: Native PDO prepared statements exclusively, with emulated prepares disabled (`ATTR_EMULATE_PREPARES = false`).
-- 🛑 **Database-Backed Brute-Force Rate Limiting**: Persistent throttling across IP addresses and usernames via `login_attempts`. Immune to session-drop attacks.
-- 🔒 **Enterprise Session Hardening**: Strict session mode (`session.use_strict_mode = 1`), `HttpOnly`, `SameSite=Lax`, dual idle/absolute timeouts, and session ID regeneration.
-- ⚡ **CSRF Defense with POST-Only Logout**: State-changing endpoints strictly require verified cryptographic synchronizer tokens, eliminating Logout CSRF.
-- 🌐 **Centralized HTTP Security Headers**: Content Security Policy (CSP), Frame-Ancestors/X-Frame-Options, X-Content-Type-Options, and Permissions-Policy emitted directly in PHP (works on Apache, Nginx, and Caddy).
-- ⚙️ **Zero-Dependency .env Loader**: Native configuration loader supporting `.env` files and container environment variables.
-- 🎨 **Modern Minimalist Dark UI**: High-contrast, responsive design system crafted with vanilla CSS variables and semantic HTML.
+-  **Zero SQL Injection by Design**: Native PDO prepared statements exclusively, with emulated prepares disabled (`ATTR_EMULATE_PREPARES = false`).
+-  **Database-Backed Brute-Force Rate Limiting**: Persistent throttling across IP addresses and usernames via `login_attempts`. Immune to session-drop attacks.
+-  **Enterprise Session Hardening**: Strict session mode (`session.use_strict_mode = 1`), `HttpOnly`, `SameSite=Lax`, dual idle/absolute timeouts, and session ID regeneration.
+-  **CSRF Defense with POST-Only Logout**: State-changing endpoints strictly require verified cryptographic synchronizer tokens, eliminating Logout CSRF.
+-  **Centralized HTTP Security Headers**: Content Security Policy (CSP), Frame-Ancestors/X-Frame-Options, X-Content-Type-Options, and Permissions-Policy emitted directly in PHP (works on Apache, Nginx, and Caddy).
+-  **Zero-Dependency .env Loader**: Native configuration loader supporting `.env` files and container environment variables.
+-  **Modern Minimalist Dark UI**: High-contrast, responsive design system crafted with vanilla CSS variables and semantic HTML.
 
 ---
 
