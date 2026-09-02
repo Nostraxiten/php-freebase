@@ -2,8 +2,8 @@
 /**
  * auth.php
  * ---------
- * Robust session management, persistent rate-limiting (database-backed against brute force),
- * role-based authorization, and secure authentication flow.
+ * Robust session management, persistent rate-limiting (database-backed),
+ * user registration with email verification, role authorization, and secure authentication.
  * Direct access to this file is blocked by PHP guard and .htaccess.
  */
 
@@ -20,7 +20,6 @@ require_once __DIR__ . '/functions.php';
 
 /**
  * Bootstrap an enterprise-grade hardened PHP session.
- * Implements strict mode, secure cookie parameters, idle timeout, and absolute expiration.
  */
 function start_secure_session(): void
 {
@@ -28,7 +27,6 @@ function start_secure_session(): void
         return;
     }
 
-    // Harden PHP session core directives before session_start()
     ini_set('session.use_strict_mode', '1');  // Prevents session fixation (CWE-384)
     ini_set('session.use_only_cookies', '1'); // Disallow session IDs in URLs
     ini_set('session.use_trans_sid', '0');    // Disable transparent session ID passing
@@ -39,7 +37,7 @@ function start_secure_session(): void
                ((int)($_SERVER['SERVER_PORT'] ?? 80) === 443);
 
     session_set_cookie_params([
-        'lifetime' => 0,          // Cookie expires when the browser closes
+        'lifetime' => 0,          // Cookie expires on browser close
         'path'     => '/',
         'domain'   => '',
         'secure'   => $isHttps,   // Secure flag only sent over HTTPS
@@ -51,7 +49,7 @@ function start_secure_session(): void
 
     $now = time();
 
-    // 1. Idle Timeout (User inactive for more than SESSION_LIFETIME)
+    // 1. Idle Timeout
     if (isset($_SESSION['last_activity']) && ($now - (int)$_SESSION['last_activity'] > SESSION_LIFETIME)) {
         session_unset();
         session_destroy();
@@ -59,7 +57,7 @@ function start_secure_session(): void
         session_regenerate_id(true);
     }
 
-    // 2. Absolute Lifetime (Session older than SESSION_MAX_LIFETIME, e.g. 8 hours)
+    // 2. Absolute Lifetime
     if (isset($_SESSION['created_at']) && ($now - (int)$_SESSION['created_at'] > SESSION_MAX_LIFETIME)) {
         session_unset();
         session_destroy();
@@ -83,11 +81,14 @@ function is_logged_in(): bool
 }
 
 /**
- * Check if the authenticated user has administrative privileges.
+ * Check if the authenticated user is the administrator.
+ * Only the designated "admin" user has administrative privileges.
  */
 function is_admin(): bool
 {
-    return is_logged_in() && (($_SESSION['role'] ?? '') === 'admin');
+    return is_logged_in() &&
+           (($_SESSION['role'] ?? '') === 'admin') &&
+           (($_SESSION['username'] ?? '') === 'admin');
 }
 
 /**
@@ -101,39 +102,35 @@ function require_login(): void
 }
 
 /**
- * Require administrative role; redirect with 403 or to dashboard if insufficient.
+ * Require administrative privileges; reject with 403 if insufficient.
  */
 function require_admin(): void
 {
     require_login();
     if (!is_admin()) {
         http_response_code(403);
-        die('Forbidden: Administrator privileges required.');
+        die('Access Denied: Administrator privileges required.');
     }
 }
 
 /**
  * Database-backed brute force rate-limiting.
- * Checks whether the client IP or target username exceeds failed attempt thresholds.
- * Overcomes session-drop attacks (OWASP A07 / CWE-307).
  */
-function is_rate_limited(string $username, string $ip): bool
+function is_rate_limited(string $identifier, string $ip): bool
 {
     try {
         $pdo = get_pdo();
         $cutoff = date('Y-m-d H:i:s', time() - LOGIN_LOCKOUT_SECONDS);
 
-        // Count recent failed attempts for either this IP or this specific username
         $stmt = $pdo->prepare(
             'SELECT COUNT(*) FROM login_attempts
              WHERE (ip_address = ? OR username = ?) AND attempted_at >= ?'
         );
-        $stmt->execute([$ip, $username, $cutoff]);
+        $stmt->execute([$ip, $identifier, $cutoff]);
         $attempts = (int) $stmt->fetchColumn();
 
         return $attempts >= LOGIN_MAX_ATTEMPTS;
     } catch (Throwable $e) {
-        // Fail-safe fallback to session throttling if DB is unreachable
         error_log('[RateLimit Check Error] ' . $e->getMessage());
         $data = $_SESSION['login_throttle'] ?? null;
         if ($data && ($data['count'] >= LOGIN_MAX_ATTEMPTS) && (time() - $data['first_attempt'] < LOGIN_LOCKOUT_SECONDS)) {
@@ -146,9 +143,8 @@ function is_rate_limited(string $username, string $ip): bool
 /**
  * Record a failed authentication attempt in the database.
  */
-function record_failed_attempt(string $username, string $ip): void
+function record_failed_attempt(string $identifier, string $ip): void
 {
-    // Dual-layer: Record in session
     if (empty($_SESSION['login_throttle'])) {
         $_SESSION['login_throttle'] = ['count' => 1, 'first_attempt' => time()];
     } else {
@@ -158,9 +154,8 @@ function record_failed_attempt(string $username, string $ip): void
     try {
         $pdo = get_pdo();
         $stmt = $pdo->prepare('INSERT INTO login_attempts (ip_address, username, attempted_at) VALUES (?, ?, NOW())');
-        $stmt->execute([$ip, $username]);
+        $stmt->execute([$ip, $identifier]);
 
-        // Probabilistic cleanup of records older than 24 hours (1 in 20 requests)
         if (random_int(1, 20) === 1) {
             $pdo->exec("DELETE FROM login_attempts WHERE attempted_at < (NOW() - INTERVAL 1 DAY)");
         }
@@ -170,72 +165,208 @@ function record_failed_attempt(string $username, string $ip): void
 }
 
 /**
- * Clear failed attempts for a specific IP and username upon successful login.
+ * Clear failed attempts for a specific IP and identifier.
  */
-function clear_failed_attempts(string $username, string $ip): void
+function clear_failed_attempts(string $identifier, string $ip): void
 {
     unset($_SESSION['login_throttle']);
 
     try {
         $pdo = get_pdo();
         $stmt = $pdo->prepare('DELETE FROM login_attempts WHERE ip_address = ? OR username = ?');
-        $stmt->execute([$ip, $username]);
+        $stmt->execute([$ip, $identifier]);
     } catch (Throwable $e) {
         error_log('[Clear Attempts Error] ' . $e->getMessage());
     }
 }
 
 /**
- * Attempt authentication with password verification, automatic rehash, and session protection.
- * Returns an array with ['success' => bool, 'error' => string].
+ * Register a new user account with email verification token.
+ * All new registrations are strictly assigned the 'user' role.
  */
-function attempt_login(string $username, string $password): array
+function register_user(string $username, string $email, string $password): array
 {
     $ip = get_client_ip();
 
-    if (is_rate_limited($username, $ip)) {
+    if (is_rate_limited($ip, $ip)) {
         return [
             'success' => false,
-            'error'   => 'Too many failed login attempts. Please wait 5 minutes before trying again.',
+            'error'   => 'Too many registration requests. Please wait a few minutes.',
+        ];
+    }
+
+    if (!validate_username($username)) {
+        return [
+            'success' => false,
+            'error'   => 'Username must be between 4 and 12 alphanumeric characters.',
+        ];
+    }
+
+    if (!is_valid_email($email)) {
+        return [
+            'success' => false,
+            'error'   => 'Please provide a valid email address.',
+        ];
+    }
+
+    if (!validate_password_length($password)) {
+        return [
+            'success' => false,
+            'error'   => 'Password must be between 8 and 128 characters.',
         ];
     }
 
     try {
         $pdo = get_pdo();
-        $stmt = $pdo->prepare('SELECT id, username, password, role, is_active FROM users WHERE username = ? LIMIT 1');
-        $stmt->execute([$username]);
+
+        // Check if username or email is already registered
+        $stmt = $pdo->prepare('SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1');
+        $stmt->execute([$username, $email]);
+        if ($stmt->fetch()) {
+            return [
+                'success' => false,
+                'error'   => 'Username or email address is already in use.',
+            ];
+        }
+
+        // Generate strong password hash
+        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+
+        // Generate cryptographic email verification token
+        $verificationToken = bin2hex(random_bytes(32));
+
+        // Insert user with role 'user' and pending verification
+        $insertStmt = $pdo->prepare(
+            'INSERT INTO users (username, email, password, role, is_active, email_verified_at, verification_token)
+             VALUES (?, ?, ?, "user", 1, NULL, ?)'
+        );
+        $insertStmt->execute([$username, $email, $passwordHash, $verificationToken]);
+
+        return [
+            'success' => true,
+            'token'   => $verificationToken,
+            'error'   => '',
+        ];
+    } catch (Throwable $e) {
+        error_log('[Registration Error] ' . $e->getMessage());
+        return [
+            'success' => false,
+            'error'   => 'Account creation temporarily unavailable. Please try again later.',
+        ];
+    }
+}
+
+/**
+ * Verify a user account using an email verification token.
+ */
+function verify_email_token(string $token): array
+{
+    if (strlen($token) !== 64 || !ctype_xdigit($token)) {
+        return [
+            'success' => false,
+            'error'   => 'Invalid verification token format.',
+        ];
+    }
+
+    try {
+        $pdo = get_pdo();
+        $stmt = $pdo->prepare(
+            'SELECT id, username FROM users
+             WHERE verification_token = ? AND email_verified_at IS NULL
+             LIMIT 1'
+        );
+        $stmt->execute([$token]);
+        $user = $stmt->fetch();
+
+        if (!$user) {
+            return [
+                'success' => false,
+                'error'   => 'Verification link is invalid or has already been used.',
+            ];
+        }
+
+        // Activate and clear verification token
+        $updateStmt = $pdo->prepare(
+            'UPDATE users SET email_verified_at = NOW(), verification_token = NULL WHERE id = ?'
+        );
+        $updateStmt->execute([$user['id']]);
+
+        return [
+            'success'  => true,
+            'username' => (string) $user['username'],
+            'error'    => '',
+        ];
+    } catch (Throwable $e) {
+        error_log('[Email Verification Error] ' . $e->getMessage());
+        return [
+            'success' => false,
+            'error'   => 'Verification service error. Please try again later.',
+        ];
+    }
+}
+
+/**
+ * Attempt authentication with password verification, rehash, and email verification check.
+ */
+function attempt_login(string $identifier, string $password): array
+{
+    $ip = get_client_ip();
+
+    if (is_rate_limited($identifier, $ip)) {
+        return [
+            'success' => false,
+            'error'   => 'Too many failed attempts. Please wait 5 minutes before trying again.',
+        ];
+    }
+
+    try {
+        $pdo = get_pdo();
+        // Support logging in via username or email
+        $stmt = $pdo->prepare(
+            'SELECT id, username, email, password, role, is_active, email_verified_at
+             FROM users WHERE username = ? OR email = ? LIMIT 1'
+        );
+        $stmt->execute([$identifier, $identifier]);
         $user = $stmt->fetch();
 
         if ($user) {
-            // Check if user account is disabled
+            // Account active check
             if ((int) $user['is_active'] !== 1) {
-                record_failed_attempt($username, $ip);
+                record_failed_attempt($identifier, $ip);
                 return [
                     'success' => false,
-                    'error'   => 'This account has been disabled. Please contact an administrator.',
+                    'error'   => 'This account has been deactivated.',
+                ];
+            }
+
+            // Email verification check
+            if ($user['email_verified_at'] === null) {
+                record_failed_attempt($identifier, $ip);
+                return [
+                    'success' => false,
+                    'error'   => 'Email verification required. Please check your inbox or activation link.',
                 ];
             }
 
             if (password_verify($password, $user['password'])) {
-                // Check if password hash needs to be updated to stronger algorithm/cost
+                // Automatic hash upgrade when algorithm/cost evolves
                 if (password_needs_rehash($user['password'], PASSWORD_DEFAULT)) {
                     $newHash = password_hash($password, PASSWORD_DEFAULT);
                     $updateStmt = $pdo->prepare('UPDATE users SET password = ? WHERE id = ?');
                     $updateStmt->execute([$newHash, $user['id']]);
                 }
 
-                // Prevent session fixation on privilege elevation
                 session_regenerate_id(true);
-
-                // Rotate CSRF token on authentication change
                 rotate_csrf_token();
+                clear_failed_attempts($identifier, $ip);
 
-                // Clear throttling records
-                clear_failed_attempts($username, $ip);
+                // Enforce strictly: only 'admin' username receives admin role
+                $assignedRole = ($user['username'] === 'admin' && $user['role'] === 'admin') ? 'admin' : 'user';
 
                 $_SESSION['user_id']       = (int) $user['id'];
                 $_SESSION['username']      = (string) $user['username'];
-                $_SESSION['role']          = (string) ($user['role'] ?? 'user');
+                $_SESSION['email']         = (string) $user['email'];
+                $_SESSION['role']          = $assignedRole;
                 $_SESSION['auth_time']     = time();
                 $_SESSION['created_at']    = time();
                 $_SESSION['last_activity'] = time();
@@ -251,16 +382,16 @@ function attempt_login(string $username, string $password): array
         ];
     }
 
-    record_failed_attempt($username, $ip);
+    record_failed_attempt($identifier, $ip);
 
     return [
         'success' => false,
-        'error'   => 'Invalid username or password.',
+        'error'   => 'Invalid credentials. Please verify your username/email and password.',
     ];
 }
 
 /**
- * Completely invalidate and destroy the current session, clearing cookies and tokens.
+ * Invalidate and destroy session.
  */
 function logout(): void
 {

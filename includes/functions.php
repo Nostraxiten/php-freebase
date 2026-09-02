@@ -29,7 +29,7 @@ function send_security_headers(): void
     header('Referrer-Policy: strict-origin-when-cross-origin');
     header('Permissions-Policy: accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()');
 
-    // Strict Content Security Policy (No inline scripts/styles needed for basic app)
+    // Strict Content Security Policy
     header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self';");
 
     // HSTS (HTTP Strict Transport Security) only when served over HTTPS
@@ -40,7 +40,6 @@ function send_security_headers(): void
 
 /**
  * Sanitize basic string input (trims whitespace and removes null bytes).
- * Note: Sanitization is NOT a replacement for contextual validation or prepared statements.
  */
 function sanitize_input(string $data): string
 {
@@ -49,21 +48,22 @@ function sanitize_input(string $data): string
 }
 
 /**
- * Validate username according to safe format constraints:
- * - Length between 3 and 50 characters (matches DB column length)
- * - Only alphanumeric characters, dots, dashes, and underscores
+ * Validate username according to strict constraints:
+ * - Minimum 4 characters, Maximum 12 characters
+ * - Only alphanumeric characters, dashes, and underscores
  */
 function validate_username(string $username): bool
 {
-    if (strlen($username) < 3 || strlen($username) > 50) {
+    $len = strlen($username);
+    if ($len < 4 || $len > 12) {
         return false;
     }
-    return (bool) preg_match('/^[a-zA-Z0-9_.\-]+$/', $username);
+    return (bool) preg_match('/^[a-zA-Z0-9_\-]+$/', $username);
 }
 
 /**
  * Validate password length constraints:
- * - Minimum 8 characters for baseline strength
+ * - Minimum 8 characters
  * - Maximum 128 characters to prevent DoS via bcrypt CPU exhaustion
  */
 function validate_password_length(string $password): bool
@@ -73,7 +73,7 @@ function validate_password_length(string $password): bool
 }
 
 /**
- * Escape a string for safe HTML output (XSS Prevention - OWASP Recommendation).
+ * Escape a string for safe HTML output (XSS Prevention).
  * Always use in HTML templates: <?= e($untrustedData) ?>
  */
 function e(?string $value): string
@@ -93,7 +93,7 @@ function csrf_token(bool $forceNew = false): string
 }
 
 /**
- * Regenerate the CSRF token (useful upon privilege change or login).
+ * Regenerate the CSRF token.
  */
 function rotate_csrf_token(): string
 {
@@ -131,12 +131,14 @@ function verify_csrf(?string $submittedToken, bool $rotate = false): bool
  */
 function is_valid_email(string $email): bool
 {
+    if (strlen($email) > 100) {
+        return false;
+    }
     return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
 }
 
 /**
  * Safely extract the client's IP address.
- * Uses REMOTE_ADDR to prevent IP spoofing attacks against the rate limiter.
  */
 function get_client_ip(): string
 {
@@ -149,15 +151,12 @@ function get_client_ip(): string
 
 /**
  * Safe redirect helper.
- * Prevents Open Redirect (CWE-601) by ensuring the path is relative and does not
- * specify external schemes or protocol-relative paths.
+ * Prevents Open Redirect (CWE-601) by ensuring the path is relative.
  */
 function redirect(string $path): never
 {
-    // Prevent CRLF injection in HTTP headers
     $path = str_replace(["\r", "\n"], '', $path);
 
-    // Block external URLs and protocol-relative paths (e.g. "//evil.com" or "javascript:")
     if (preg_match('#^(https?:|//|javascript:|data:)#i', $path)) {
         $path = 'index.php';
     }

@@ -14,14 +14,19 @@ USE `freebase`;
 -- Users Table
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `users` (
-    `id`         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    `username`   VARCHAR(50)               NOT NULL UNIQUE,
-    `password`   VARCHAR(255)              NOT NULL, -- bcrypt/argon2 hash, never plain text
-    `role`       ENUM('admin', 'user')     NOT NULL DEFAULT 'user',
-    `is_active`  TINYINT(1) UNSIGNED       NOT NULL DEFAULT 1,
-    `created_at` TIMESTAMP                 NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP                 NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX `idx_username_active` (`username`, `is_active`)
+    `id`                 INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    `username`           VARCHAR(12)               NOT NULL UNIQUE, -- Min 4, Max 12 characters
+    `email`              VARCHAR(100)              NOT NULL UNIQUE,
+    `password`           VARCHAR(255)              NOT NULL, -- Secure hash (bcrypt/argon2)
+    `role`               ENUM('admin', 'user')     NOT NULL DEFAULT 'user',
+    `is_active`          TINYINT(1) UNSIGNED       NOT NULL DEFAULT 1,
+    `email_verified_at`  TIMESTAMP                 NULL DEFAULT NULL,
+    `verification_token` VARCHAR(64)               NULL DEFAULT NULL,
+    `created_at`         TIMESTAMP                 NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `updated_at`         TIMESTAMP                 NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX `idx_username` (`username`),
+    INDEX `idx_email` (`email`),
+    INDEX `idx_token` (`verification_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
@@ -40,17 +45,20 @@ CREATE TABLE IF NOT EXISTS `login_attempts` (
 -- Default Admin User
 -- -----------------------------------------------------------------------------
 -- Username: "admin"
--- Password: "admin" (Hash: bcrypt, cost 10)
+-- Password: "admin123" (Hash: bcrypt, cost 10)
+-- Email: "admin@freebase.local" (Pre-verified)
 -- -----------------------------------------------------------------------------
--- CRITICAL SECURITY NOTICE:
--- You MUST change this password immediately after the first login in any
--- shared or public environment.
+-- SECURITY NOTICE:
+-- The default password is "admin123". Always update this credential before
+-- production deployment.
 -- -----------------------------------------------------------------------------
-INSERT INTO `users` (`username`, `password`, `role`, `is_active`)
-VALUES ('admin', '$2b$10$SLN20s.dggHCGf3qyABF8OnrOXKjoUph7cdVaFOxc1XwrgbKYgHm2', 'admin', 1)
+INSERT INTO `users` (`username`, `email`, `password`, `role`, `is_active`, `email_verified_at`)
+VALUES ('admin', 'admin@freebase.local', '$2b$10$MAfUOW/eKLp4LJu0A/phIOjsu/BUfsIEEDr7Kx0aizq7ejwdKuXL2', 'admin', 1, CURRENT_TIMESTAMP)
 ON DUPLICATE KEY UPDATE
-    `role` = VALUES(`role`),
-    `is_active` = VALUES(`is_active`);
+    `password` = VALUES(`password`),
+    `role` = 'admin',
+    `is_active` = 1,
+    `email_verified_at` = COALESCE(`email_verified_at`, CURRENT_TIMESTAMP);
 
 -- -----------------------------------------------------------------------------
 -- Migration Notes (for existing databases):
@@ -58,8 +66,9 @@ ON DUPLICATE KEY UPDATE
 -- If you already have an earlier version of the `users` table, run:
 --
 -- ALTER TABLE `users`
---   ADD COLUMN IF NOT EXISTS `role` ENUM('admin', 'user') NOT NULL DEFAULT 'user' AFTER `password`,
---   ADD COLUMN IF NOT EXISTS `is_active` TINYINT(1) UNSIGNED NOT NULL DEFAULT 1 AFTER `role`,
---   ADD COLUMN IF NOT EXISTS `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`;
+--   MODIFY COLUMN `username` VARCHAR(12) NOT NULL,
+--   ADD COLUMN IF NOT EXISTS `email` VARCHAR(100) NOT NULL UNIQUE AFTER `username`,
+--   ADD COLUMN IF NOT EXISTS `email_verified_at` TIMESTAMP NULL DEFAULT NULL AFTER `is_active`,
+--   ADD COLUMN IF NOT EXISTS `verification_token` VARCHAR(64) NULL DEFAULT NULL AFTER `email_verified_at`;
 --
--- UPDATE `users` SET `role` = 'admin' WHERE `username` = 'admin';
+-- UPDATE `users` SET `password` = '$2b$10$MAfUOW/eKLp4LJu0A/phIOjsu/BUfsIEEDr7Kx0aizq7ejwdKuXL2' WHERE `username` = 'admin';
