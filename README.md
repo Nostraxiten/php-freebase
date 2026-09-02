@@ -12,7 +12,7 @@ Equipped with defense-in-depth security, database-backed brute force protection,
 
 </div>
 
----
+<img width="982" height="733" alt="image" src="https://github.com/user-attachments/assets/e12f547f-2140-40c6-8f58-e999b9779734" />
 
 ## Table of Contents
 
