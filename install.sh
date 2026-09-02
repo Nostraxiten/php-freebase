@@ -255,13 +255,11 @@ if command -v mariadb >/dev/null 2>&1; then
 fi
 
 # ------------------------------------------------------------------------------
-# On Debian/Trixie (and Ubuntu 20+), MariaDB root user uses unix_socket plugin
-# authentication — meaning it authenticates by matching the calling Linux user
-# to the MySQL root user, WITHOUT a password prompt.
-# We must connect via the unix socket explicitly. Do NOT pass -p or --password.
+# Auto-detect how to authenticate as MySQL/MariaDB administrator.
+# In fresh installs on Debian, root authenticates via unix_socket (no password).
+# If root password was already set (e.g. from a prior run or DB_USER=root),
+# we detect and use the password automatically.
 # ------------------------------------------------------------------------------
-
-# Auto-detect the unix socket path used by this installation
 MYSQL_SOCKET=""
 for sock in /var/run/mysqld/mysqld.sock /run/mysqld/mysqld.sock /tmp/mysql.sock /var/lib/mysql/mysql.sock; do
     if [ -S "$sock" ]; then
@@ -270,17 +268,50 @@ for sock in /var/run/mysqld/mysqld.sock /run/mysqld/mysqld.sock /tmp/mysql.sock 
     fi
 done
 
+SOCKET_ARG=""
 if [ -n "$MYSQL_SOCKET" ]; then
-    MYSQL_ROOT="$MYSQL_CMD --socket=${MYSQL_SOCKET} -u root"
-    echo -e "    -> Authenticating via unix_socket: ${MYSQL_SOCKET}"
-else
-    # Fallback: let the driver pick the default socket (works when running as root)
-    MYSQL_ROOT="$MYSQL_CMD -u root"
-    echo -e "    -> Authenticating via default unix_socket as system root"
+    SOCKET_ARG="--socket=${MYSQL_SOCKET}"
 fi
 
-$MYSQL_ROOT <<EOF
+ADMIN_CNF=$(mktemp)
+chmod 600 "$ADMIN_CNF"
+
+# Test connection method:
+# 1. Test unix_socket (no password)
+if $MYSQL_CMD $SOCKET_ARG -u root -e "SELECT 1" >/dev/null 2>&1; then
+    cat <<EOF > "$ADMIN_CNF"
+[client]
+user=root
+${MYSQL_SOCKET:+socket=$MYSQL_SOCKET}
+EOF
+    echo -e "    -> Connected via unix_socket (passwordless)"
+# 2. Test using the provided DB_PASS (if DB_USER is root or password was already set)
+elif $MYSQL_CMD -u root -p"${DB_PASS}" -e "SELECT 1" >/dev/null 2>&1; then
+    cat <<EOF > "$ADMIN_CNF"
+[client]
+user=root
+password=${DB_PASS}
+${MYSQL_SOCKET:+socket=$MYSQL_SOCKET}
+EOF
+    echo -e "    -> Connected as root using configured lab password"
+# 3. Prompt user for current root password if custom
+else
+    echo -e "${YELLOW}[?] MariaDB root requires a password. Please enter the current MariaDB root password:${NC}"
+    read -rsp "Current MariaDB root password: " CURRENT_ROOT_PASS
+    echo ""
+    cat <<EOF > "$ADMIN_CNF"
+[client]
+user=root
+password=${CURRENT_ROOT_PASS}
+${MYSQL_SOCKET:+socket=$MYSQL_SOCKET}
+EOF
+fi
+
+# Execute database and user creation using detected admin credentials
+$MYSQL_CMD --defaults-file="$ADMIN_CNF" <<EOF
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Configure remote and local access for the chosen lab user
 CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';
 ALTER USER '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'%';
@@ -292,10 +323,24 @@ GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
-# Import schema with the 4 default lab users (root, admin, user, hacker)
-# Uses $MYSQL_ROOT which already contains the correct unix_socket connection command
-echo -e "[*] Importing schema and seeding default lab accounts..."
-$MYSQL_ROOT "${DB_NAME}" < "${SCRIPT_DIR}/db/schema.sql"
+rm -f "$ADMIN_CNF"
+
+# ------------------------------------------------------------------------------
+# Import schema using the newly configured database user credentials
+# This guarantees success whether DB_USER is root or a custom lab user!
+# ------------------------------------------------------------------------------
+echo -e "[*] Importing schema and seeding default lab accounts using '$DB_USER'..."
+USER_CNF=$(mktemp)
+chmod 600 "$USER_CNF"
+cat <<EOF > "$USER_CNF"
+[client]
+user=${DB_USER}
+password=${DB_PASS}
+${MYSQL_SOCKET:+socket=$MYSQL_SOCKET}
+EOF
+
+$MYSQL_CMD --defaults-file="$USER_CNF" "${DB_NAME}" < "${SCRIPT_DIR}/db/schema.sql"
+rm -f "$USER_CNF"
 
 echo -e "${GREEN}[+] MySQL Database initialized and listening on 0.0.0.0:3306.${NC}"
 
