@@ -206,6 +206,16 @@ if [ "$IS_TERMUX" = false ]; then
     systemctl enable mariadb 2>/dev/null || systemctl enable mysql 2>/dev/null || true
     systemctl start mariadb 2>/dev/null || systemctl start mysql 2>/dev/null || service mariadb start 2>/dev/null || true
 
+    # Wait until MariaDB is fully up and accepting connections (prevents race on restart)
+    echo -e "[*] Waiting for MariaDB to become ready..."
+    for i in $(seq 1 30); do
+        if mysqladmin ping --silent 2>/dev/null; then
+            echo -e "[*] MariaDB is up (attempt $i)."
+            break
+        fi
+        sleep 1
+    done
+
     # Configure bind-address = 0.0.0.0 to expose MySQL on port 3306
     MYSQL_CONF_DIR="/etc/mysql/mariadb.conf.d"
     if [ ! -d "$MYSQL_CONF_DIR" ]; then
@@ -221,6 +231,14 @@ skip-networking = 0
 EOF
 
     systemctl restart mariadb 2>/dev/null || systemctl restart mysql 2>/dev/null || true
+
+    # Wait after restart
+    for i in $(seq 1 30); do
+        if mysqladmin ping --silent 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
 else
     mysql_install_db 2>/dev/null || true
     mysqld_safe --bind-address=0.0.0.0 --port=3306 &
@@ -230,12 +248,38 @@ fi
 # Initialize database and import schema
 echo -e "[*] Initializing database '$DB_NAME' and creating lab user '$DB_USER'..."
 
+# Detect the right mysql/mariadb binary
 MYSQL_CMD="mysql"
 if command -v mariadb >/dev/null 2>&1; then
     MYSQL_CMD="mariadb"
 fi
 
-$MYSQL_CMD -u root <<EOF
+# ------------------------------------------------------------------------------
+# On Debian/Trixie (and Ubuntu 20+), MariaDB root user uses unix_socket plugin
+# authentication — meaning it authenticates by matching the calling Linux user
+# to the MySQL root user, WITHOUT a password prompt.
+# We must connect via the unix socket explicitly. Do NOT pass -p or --password.
+# ------------------------------------------------------------------------------
+
+# Auto-detect the unix socket path used by this installation
+MYSQL_SOCKET=""
+for sock in /var/run/mysqld/mysqld.sock /run/mysqld/mysqld.sock /tmp/mysql.sock /var/lib/mysql/mysql.sock; do
+    if [ -S "$sock" ]; then
+        MYSQL_SOCKET="$sock"
+        break
+    fi
+done
+
+if [ -n "$MYSQL_SOCKET" ]; then
+    MYSQL_ROOT="$MYSQL_CMD --socket=${MYSQL_SOCKET} -u root"
+    echo -e "    -> Authenticating via unix_socket: ${MYSQL_SOCKET}"
+else
+    # Fallback: let the driver pick the default socket (works when running as root)
+    MYSQL_ROOT="$MYSQL_CMD -u root"
+    echo -e "    -> Authenticating via default unix_socket as system root"
+fi
+
+$MYSQL_ROOT <<EOF
 CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';
 ALTER USER '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';
