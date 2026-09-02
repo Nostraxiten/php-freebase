@@ -1,0 +1,12 @@
+services:
+  freebase-lab:
+    build: .
+    container_name: php-freebase-lab
+    ports:
+      - "80:80"      # HTTP (Redirects to HTTPS)
+      - "443:443"    # HTTPS (TLS Web App)
+      - "3306:3306"  # MySQL (Remote Database Access)
+      - "2222:22"    # SSH (Port 22 mapped to host 2222 or 22)
+    environment:
+      - SSH_PASSWORD=root
+    restart: unless-stopped

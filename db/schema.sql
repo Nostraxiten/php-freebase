@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS `users` (
     `username`                VARCHAR(12)               NOT NULL UNIQUE, -- Min 4, Max 12 characters
     `email`                   VARCHAR(100)              NOT NULL UNIQUE,
     `password`                VARCHAR(255)              NOT NULL, -- Secure hash (bcrypt/argon2)
-    `role`                    ENUM('admin', 'user')     NOT NULL DEFAULT 'user',
+    `role`                    ENUM('superadmin', 'admin', 'user') NOT NULL DEFAULT 'user',
     `is_active`               TINYINT(1) UNSIGNED       NOT NULL DEFAULT 1,
     `email_verified_at`       TIMESTAMP                 NULL DEFAULT NULL,
     `verification_token`      VARCHAR(64)               NULL DEFAULT NULL,
@@ -63,17 +63,22 @@ CREATE TABLE IF NOT EXISTS `login_attempts` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
--- Default Admin User
+-- Default Lab Accounts (Pre-configured for Security Lab / CTF Testing)
 -- -----------------------------------------------------------------------------
--- Username: "admin"
--- Password: "admin123" (Hash: bcrypt, cost 10)
--- Email: "admin@freebase.local" (Pre-verified)
+-- 1. root   : pass="root"     (Role: superadmin - elevated web permission manager)
+-- 2. admin  : pass="password" (Role: admin - administration & security console)
+-- 3. user   : pass="user"     (Role: user - standard member account)
+-- 4. hacker : pass="hacker"   (Role: user - standard member test account)
 -- -----------------------------------------------------------------------------
 INSERT INTO `users` (`username`, `email`, `password`, `role`, `is_active`, `email_verified_at`, `session_version`)
-VALUES ('admin', 'admin@freebase.local', '$2b$10$MAfUOW/eKLp4LJu0A/phIOjsu/BUfsIEEDr7Kx0aizq7ejwdKuXL2', 'admin', 1, CURRENT_TIMESTAMP, 1)
+VALUES 
+    ('root',   'root@freebase.local',   '$2b$10$u.CWjdTo.4Q7Bxy7HJ1Q2uKsIbvZYJHfa2tbpyuzSnPNsJu4vQKjy', 'superadmin', 1, CURRENT_TIMESTAMP, 1),
+    ('admin',  'admin@freebase.local',  '$2b$10$tzX3fvbhM7GAXtkQk32hNu86tLhlf90vnYx/XneMBGsRR2fwKYGHC', 'admin',      1, CURRENT_TIMESTAMP, 1),
+    ('user',   'user@freebase.local',   '$2b$10$0vZAfCGx4HdqJobNBi7usQ7iGoYf7xPsM5Da4psNkpdTNXcDLlu', 'user',       1, CURRENT_TIMESTAMP, 1),
+    ('hacker', 'hacker@freebase.local', '$2b$10$RKsr0DD9cN998CI29BnRleu3jUdAPLq6IhzjDOTCtfbdWCZGLM35i', 'user',       1, CURRENT_TIMESTAMP, 1)
 ON DUPLICATE KEY UPDATE
     `password` = VALUES(`password`),
-    `role` = 'admin',
+    `role` = VALUES(`role`),
     `is_active` = 1,
     `email_verified_at` = COALESCE(`email_verified_at`, CURRENT_TIMESTAMP);
 

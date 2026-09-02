@@ -24,6 +24,7 @@ $role           = (string) ($_SESSION['role'] ?? 'user');
 $currentUserId  = (int) ($_SESSION['user_id'] ?? 0);
 $sessionVer     = (int) ($_SESSION['session_version'] ?? 1);
 $isAdmin        = is_admin();
+$isSuperAdmin   = is_super_admin();
 $sessionCreated = date('H:i:s d/m/Y', (int) ($_SESSION['created_at'] ?? time()));
 $lastActivity   = date('H:i:s', (int) ($_SESSION['last_activity'] ?? time()));
 
@@ -61,8 +62,8 @@ if ($dbConnected && $isAdmin) {
         <a href="dashboard.php" class="brand-link">
             <span class="neon-dot"></span>
             <span class="brand-title"><?= e(APP_NAME) ?></span>
-            <span class="badge badge-<?= $isAdmin ? 'admin' : 'neon' ?>">
-                <?= $isAdmin ? 'Admin Console' : 'Member Portal' ?>
+            <span class="badge badge-<?= $isSuperAdmin ? 'admin' : ($isAdmin ? 'admin' : 'neon') ?>">
+                <?= $isSuperAdmin ? 'Super Admin Console' : ($isAdmin ? 'Admin Console' : 'Member Portal') ?>
             </span>
         </a>
     </div>
@@ -96,7 +97,7 @@ if ($dbConnected && $isAdmin) {
 
     <div class="page-header">
         <div>
-            <h1><?= $isAdmin ? 'System Administration' : 'Member Dashboard' ?></h1>
+            <h1><?= $isSuperAdmin ? 'Super Administration' : ($isAdmin ? 'System Administration' : 'Member Dashboard') ?></h1>
             <p class="subtitle">Welcome back, <?= e($username) ?>.</p>
         </div>
         <div class="header-actions">
@@ -152,12 +153,17 @@ if ($dbConnected && $isAdmin) {
     <?php if ($isAdmin): ?>
         <section class="card content-card">
             <div class="card-header">
-                <h2>User Account Management &amp; Password Reset</h2>
-                <span class="badge badge-admin">Admin Capability</span>
+                <h2>User Account Management &amp; Permissions</h2>
+                <span class="badge badge-<?= $isSuperAdmin ? 'neon' : 'admin' ?>">
+                    <?= $isSuperAdmin ? 'Super Admin Authority' : 'Admin Capability' ?>
+                </span>
             </div>
             <p>
-                As administrator, you can reset passwords for accounts directly without ever seeing their prior passwords.
-                Resetting a password automatically increments the account's session version, invalidating all existing sessions.
+                As <?= $isSuperAdmin ? 'Super Administrator (root)' : 'Administrator' ?>, you can manage credentials and access for platform accounts.
+                <?php if ($isSuperAdmin): ?>
+                    You hold elevated authority to grant the <strong>admin</strong> role to users or revoke admin privileges back to <strong>user</strong>.
+                <?php endif; ?>
+                Modifying roles or resetting passwords automatically increments the user's session version, invalidating existing sessions immediately.
             </p>
 
             <?php if (!empty($allUsers)): ?>
@@ -171,7 +177,8 @@ if ($dbConnected && $isAdmin) {
                                 <th>Role</th>
                                 <th>Version</th>
                                 <th>Status</th>
-                                <th>Emergency Password Reset</th>
+                                <th>Role Permissions</th>
+                                <th>Password Reset</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -180,7 +187,15 @@ if ($dbConnected && $isAdmin) {
                                     <td>#<?= (int) $u['id'] ?></td>
                                     <td><strong><?= e($u['username']) ?></strong></td>
                                     <td><?= e($u['email']) ?></td>
-                                    <td><span class="badge badge-<?= $u['role'] === 'admin' ? 'admin' : 'muted' ?>"><?= strtoupper(e($u['role'])) ?></span></td>
+                                    <td>
+                                        <?php if ($u['role'] === 'superadmin' || $u['username'] === 'root'): ?>
+                                            <span class="badge badge-neon">SUPERADMIN</span>
+                                        <?php elseif ($u['role'] === 'admin'): ?>
+                                            <span class="badge badge-admin">ADMIN</span>
+                                        <?php else: ?>
+                                            <span class="badge badge-muted">USER</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="text-mono">v<?= (int) $u['session_version'] ?></td>
                                     <td>
                                         <?php if (!empty($u['email_verified_at'])): ?>
@@ -190,8 +205,31 @@ if ($dbConnected && $isAdmin) {
                                         <?php endif; ?>
                                     </td>
                                     <td>
+                                        <?php if ($u['username'] === 'root' || (int) $u['id'] === $currentUserId): ?>
+                                            <span class="badge badge-muted"><?= $u['username'] === 'root' ? 'Super Admin (Fixed)' : 'Active Session' ?></span>
+                                        <?php elseif ($isSuperAdmin): ?>
+                                            <?php if ($u['role'] === 'admin'): ?>
+                                                <form method="post" action="manage-role.php" class="inline-reset-form" style="display:inline-block;">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="target_user_id" value="<?= (int) $u['id'] ?>">
+                                                    <input type="hidden" name="new_role" value="user">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Revoke admin permissions from user <?= e($u['username']) ?>?');">Demote to User &darr;</button>
+                                                </form>
+                                            <?php else: ?>
+                                                <form method="post" action="manage-role.php" class="inline-reset-form" style="display:inline-block;">
+                                                    <?= csrf_field() ?>
+                                                    <input type="hidden" name="target_user_id" value="<?= (int) $u['id'] ?>">
+                                                    <input type="hidden" name="new_role" value="admin">
+                                                    <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('Grant administrator permissions to user <?= e($u['username']) ?>?');">Promote to Admin &uarr;</button>
+                                                </form>
+                                            <?php endif; ?>
+                                        <?php else: ?>
+                                            <span class="badge badge-muted"><?= strtoupper(e($u['role'])) ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
                                         <?php if ((int) $u['id'] === $currentUserId): ?>
-                                            <span class="badge badge-muted">Current Session (Self-reset restricted)</span>
+                                            <span class="badge badge-muted">Self-reset restricted</span>
                                         <?php else: ?>
                                             <form method="post" action="reset-user-password.php" class="inline-reset-form">
                                                 <?= csrf_field() ?>

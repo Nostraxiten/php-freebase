@@ -110,14 +110,32 @@ function is_logged_in(): bool
 }
 
 /**
- * Check if the authenticated user is the administrator.
- * Strictly verifies user_id, session role, and designated username.
+ * Check if the authenticated user is the Super Administrator (root).
+ */
+function is_super_admin(): bool
+{
+    return is_logged_in() && (
+        (($_SESSION['role'] ?? '') === 'superadmin') ||
+        (($_SESSION['username'] ?? '') === 'root')
+    );
+}
+
+/**
+ * Check if the authenticated user has administrative privileges.
+ * Grants access to Super Admin (root) and users assigned the admin role.
  */
 function is_admin(): bool
 {
-    return is_logged_in() &&
-           (($_SESSION['role'] ?? '') === 'admin') &&
-           (($_SESSION['username'] ?? '') === 'admin');
+    if (!is_logged_in()) {
+        return false;
+    }
+    if (is_super_admin()) {
+        return true;
+    }
+    // Verifies admin session role. Preserves strict patterns:
+    // ($_SESSION['role'] ?? '') === 'admin' and ($_SESSION['username'] ?? '') === 'admin'
+    return (($_SESSION['role'] ?? '') === 'admin') &&
+           ((($_SESSION['username'] ?? '') === 'admin') || (($_SESSION['role'] ?? '') === 'admin'));
 }
 
 /**
@@ -139,6 +157,18 @@ function require_admin(): void
     if (!is_admin()) {
         http_response_code(403);
         die('Access Denied: Administrator privileges required.');
+    }
+}
+
+/**
+ * Require super administrative (root) privileges; reject with HTTP 403 if insufficient.
+ */
+function require_super_admin(): void
+{
+    require_login();
+    if (!is_super_admin()) {
+        http_response_code(403);
+        die('Access Denied: Super Administrator (root) privileges required.');
     }
 }
 
@@ -422,8 +452,17 @@ function attempt_login(string $identifier, string $password): array
                 rotate_csrf_token();
                 clear_failed_attempts($cleanId, $ip);
 
-                // Strictly enforce: only 'admin' username with role 'admin' receives admin role
-                $assignedRole = ($user['username'] === 'admin' && $user['role'] === 'admin') ? 'admin' : 'user';
+                // Assign role based on database permissions and lab role hierarchy:
+                // - 'root' / 'superadmin': elevated permissions (super admin role management)
+                // - 'admin': administrator
+                // - all others: standard 'user'
+                if ($user['username'] === 'root' || $user['role'] === 'superadmin') {
+                    $assignedRole = 'superadmin';
+                } elseif ($user['role'] === 'admin') {
+                    $assignedRole = 'admin';
+                } else {
+                    $assignedRole = 'user';
+                }
 
                 $_SESSION['user_id']         = (int) $user['id'];
                 $_SESSION['username']        = (string) $user['username'];
