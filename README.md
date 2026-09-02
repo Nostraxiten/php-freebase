@@ -13,7 +13,7 @@ Pre-configured with realistic network services, automated deployment (`install.s
 
 </div>
 
----
+<img width="868" height="632" alt="image" src="https://github.com/user-attachments/assets/82e9c239-b2bb-4b57-b226-d409e2a9eb5a" />
 
 > [!WARNING]
 > **LABORATORY ENVIRONMENT DISCLAIMER**:  
