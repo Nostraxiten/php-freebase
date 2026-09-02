@@ -36,7 +36,8 @@ Pre-configured with realistic network services, automated deployment (`install.s
 7. [SSH Remote Shell Access (Port 22)](#7-ssh-remote-shell-access-port-22)
 8. [Auditing & Penetration Testing Exercises](#8-auditing--penetration-testing-exercises)
 9. [Automated Security Verification Suite](#9-automated-security-verification-suite)
-10. [License & Ethics](#10-license--ethics)
+10. [Troubleshooting & Common Lab Gotchas](#10-troubleshooting--common-lab-gotchas)
+11. [License & Ethics](#11-license--ethics)
 
 ---
 
@@ -349,7 +350,65 @@ Security Test Results: 22 / 22 PASSED (100% Compliance)
 
 ---
 
-## 10. License & Ethics
+## 10. Troubleshooting & Common Lab Gotchas
+
+### Issue 1: HTTP 403 Forbidden on Web Browser
+* **Symptom**: Visiting `https://<SERVER_IP>` displays:
+  ```text
+  Forbidden
+  You don't have permission to access this resource.
+  Apache/2.4.68 (Debian) Server at <SERVER_IP> Port 443
+  ```
+* **Root Cause**: The repository is cloned inside a Linux user's home folder (e.g. `/home/nox/php-freebase`). In Debian and Ubuntu, `/home/<username>` is created with strict `700` (`drwx------`) permissions. The Apache web server user (`www-data`) is blocked from traversing into `/home/<username>`, resulting in an access denied error.
+* **Resolution**:
+  Grant directory traversal (execute) permissions to your home directory:
+  ```bash
+  sudo chmod 755 /home/<your-username>
+  # Or grant execute permission specifically:
+  sudo chmod o+x /home/<your-username>
+  sudo systemctl reload apache2
+  ```
+  *(Note: The latest `install.sh` script automatically walks up all parent directories and applies `chmod o+x`)*.
+
+---
+
+### Issue 2: MariaDB ERROR 1045 (`Access denied for user 'root'@'localhost'`)
+* **Symptom**:
+  ```text
+  ERROR 1045 (28000): Access denied for user 'root'@'localhost' (using password: NO)
+  ```
+* **Root Cause**: On modern Debian (Bookworm, Trixie), MariaDB initially uses the `unix_socket` authentication plugin for `root` (requiring no password when run by the system root user). When `install.sh` is executed with `DB_USER=root` and a custom password, MariaDB switches `root` to password authentication (`IDENTIFIED BY`). Any subsequent command connecting without `-p` will be rejected.
+* **Resolution**:
+  Connect using the password configured during setup:
+  ```bash
+  mysql -u root -p<your_db_password>
+  # Or specify the socket explicitly:
+  mariadb --socket=/var/run/mysqld/mysqld.sock -u root
+  ```
+  *(Note: `install.sh` handles both socket and password-based connections automatically, and imports schemas using dedicated client configuration files)*.
+
+---
+
+### Issue 3: Nmap reports `3306/tcp open mysql?` with a question mark
+* **Symptom**:
+  ```text
+  PORT     STATE SERVICE VERSION
+  3306/tcp open  mysql?
+  ```
+* **Root Cause**: The port is **100% open and operational**. The question mark (`?`) is standard Nmap behavior indicating that its generic `-sV` probe did not complete the full MariaDB 11.x greeting negotiation (especially common on localhost or low-latency LAN connections before Nmap closes the socket).
+* **Resolution**:
+  Verify with Nmap service scripts or connect directly with the MySQL client:
+  ```bash
+  # Option A: Run Nmap with service scripts for full banner negotiation
+  nmap -sV -sC -p 3306 <SERVER_IP>
+
+  # Option B: Direct connection test
+  mysql -h <SERVER_IP> -P 3306 -u <db_user> -p<db_password> freebase
+  ```
+
+---
+
+## 11. License & Ethics
 
 This codebase is provided under the [The Unlicense](LICENSE) (Public Domain Dedication).  
 Use this software strictly for authorized training, educational security assessments, and private penetration testing laboratories.

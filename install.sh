@@ -398,6 +398,7 @@ if [ "$PKG_MANAGER" = "apt" ]; then
 
     <Directory ${SCRIPT_DIR}>
         Options -Indexes +FollowSymLinks
+        DirectoryIndex index.php index.html
         AllowOverride All
         Require all granted
     </Directory>
@@ -424,6 +425,14 @@ fi
 # Set file permissions for web server execution
 chown -R www-data:www-data "$SCRIPT_DIR" 2>/dev/null || chown -R apache:apache "$SCRIPT_DIR" 2>/dev/null || true
 chmod -R 755 "$SCRIPT_DIR"
+
+# Ensure all parent directories (e.g. /home/nox) have execute (+x) permission
+# so Apache (www-data) can traverse into the directory, preventing 403 Forbidden!
+d="$SCRIPT_DIR"
+while [ "$d" != "/" ] && [ "$d" != "." ]; do
+    chmod o+x "$d" 2>/dev/null || true
+    d="$(dirname "$d")"
+done
 
 # ------------------------------------------------------------------------------
 # 7. Configure Application Environment (.env)
