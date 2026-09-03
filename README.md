@@ -51,7 +51,7 @@ PHP FreeBase provides a robust, production-ready starting point for building sec
 
 <img width="850" height="585" alt="{8016A7B8-D4B7-49E1-BE37-B15258BA1366}" src="https://github.com/user-attachments/assets/65d60ab6-037e-47cc-a6c0-31abbf8625b7" />
 
-**This nmap scan shows that when mounted correctly it does not have active CVE's as everything is ready for the latest versions. Unicamnte would make sure that the user who uses the tool does not expose 2 ports such as SSH or MYSQL. The page in HTML, **CSS, and JavaScript is fully modifiable as everything is in PHP format. It only exposes the link of the repo used in.git. Something that can be easily hidden.
+> **This nmap scan shows that, when mounted correctly, it does not have active CVEs, as everything is ready for the latest versions. The only thing to ensure is that the user who uses the tool does not expose ports such as SSH or MySQL. The page's HTML, CSS, and JavaScript are fully modifiable, as everything is handled in PHP format. It only exposes the link to the repository used in `.git`, something that can easily be hidden.**
 
 ## Project Architecture
 
