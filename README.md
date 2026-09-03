@@ -18,6 +18,8 @@ Pre-configured with realistic network services, automated deployment (`install.s
 > [!WARNING]
 > **LABORATORY ENVIRONMENT DISCLAIMER**:  
 > This version of **PHP FreeBase** is pre-configured strictly for **local educational training, cyber range exercises, and penetration testing benchmarks**. It sets open listening ports (80, 443, 3306, 22), simplified seed passwords (`root`, `password`, `user`, `hacker`), and a remote database listener. **DO NOT DEPLOY THIS LAB CONFIGURATION TO PUBLIC PRODUCTION HOSTS.**
+>
+> This README documents the **`lab`** branch of the repository (CyberLab & CTF edition). The **`main`** branch contains the standard base template, without lab ports, seed credentials, or training exercises. Make sure you clone/checkout `lab`, not `main`, before running `install.sh`.
 
 ---
 
@@ -135,13 +137,15 @@ graph TD
 
 ## 4. One-Step Installation Guide (`install.sh`)
 
+> All installation paths below clone the **`lab`** branch specifically. Cloning without `-b lab` will pull `main` (the standard template), which does not include this lab's ports, seed accounts, or install script.
+
 ### Debian & Ubuntu (Native / Sudo)
 
 The installation script is optimized for **Debian** (and derivatives such as Ubuntu, Kali, Mint, and Raspberry Pi OS):
 
-1. Clone or copy the repository to your Debian machine:
+1. Clone the `lab` branch of the repository to your Debian machine:
    ```bash
-   git clone https://github.com/Nostraxiten/php-freebase.git
+   git clone -b lab https://github.com/Nostraxiten/php-freebase.git
    cd php-freebase
    ```
 
@@ -166,7 +170,7 @@ The installation script is optimized for **Debian** (and derivatives such as Ubu
 1. In Termux, navigate to the project directory:
    ```bash
    pkg update && pkg install -y git
-   git clone https://github.com/Nostraxiten/php-freebase.git
+   git clone -b lab https://github.com/Nostraxiten/php-freebase.git
    cd php-freebase
    ```
 
@@ -183,15 +187,16 @@ The installation script is optimized for **Debian** (and derivatives such as Ubu
 Windows operators can choose between **WSL Debian** or **Docker Desktop**:
 
 #### Option A: WSL Debian (Recommended for native feel)
-If you have WSL with Debian installed:
+If you have WSL with Debian installed, clone the `lab` branch first if you haven't already:
 ```powershell
 wsl -d Debian
-cd /mnt/c/Users/<your-user>/Documents/GitHub/php-freebase
+git clone -b lab https://github.com/Nostraxiten/php-freebase.git
+cd php-freebase
 sudo bash install.sh
 ```
 
 #### Option B: Windows Helper Script (`install.ps1`)
-Run PowerShell in the project directory:
+Run PowerShell in the project directory (already cloned on the `lab` branch):
 ```powershell
 .\install.ps1
 ```
@@ -204,6 +209,8 @@ Select option `1` for WSL Debian, or `2` for Docker Compose.
 For instant containerized deployment without altering your host system services:
 
 ```bash
+git clone -b lab https://github.com/Nostraxiten/php-freebase.git
+cd php-freebase
 docker compose up -d --build
 ```
 
