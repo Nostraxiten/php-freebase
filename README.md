@@ -11,8 +11,8 @@ Equipped with defense-in-depth security, database-backed brute force protection,
 ![Status](https://img.shields.io/badge/status-active-00f0ff?style=for-the-badge)
 
 > **Looking for the attack lab?** Check the [`lab` branch](../../tree/lab) — 
-> a pre-configured penetration testing environment with intentionally 
-> vulnerable services and automated setup.
+> This branch is pre-configured so that a bash script can launch the pentesting environment 
+> It's a good default configuration. It complies with OWASP10.
 
 </div>
 
