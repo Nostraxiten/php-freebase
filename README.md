@@ -10,6 +10,10 @@ Equipped with defense-in-depth security, database-backed brute force protection,
 ![License](https://img.shields.io/badge/license-Unlicense-blue?style=for-the-badge)
 ![Status](https://img.shields.io/badge/status-active-00f0ff?style=for-the-badge)
 
+> **Looking for the attack lab?** Check the [`lab` branch](../../tree/lab) — 
+> a pre-configured penetration testing environment with intentionally 
+> vulnerable services and automated setup.
+
 </div>
 
 <img width="982" height="733" alt="image" src="https://github.com/user-attachments/assets/e12f547f-2140-40c6-8f58-e999b9779734" />
