@@ -1,19 +1,27 @@
+
 # ==============================================================================
 # Root .htaccess - PHP FreeBase Server Hardening
 # ==============================================================================
 # Requires Apache mod_rewrite, mod_headers, and mod_authz_core enabled.
 # ==============================================================================
 
-# --- Block direct web access to internal application directories ---
+# --- Block direct web access to internal application directories,
+#     AND to any hidden directory/file (.git, .svn, .idea, .env, etc.) ---
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteRule ^(includes|db)/ - [F,L]
+    RewriteRule ^(includes|db)(/|$) - [F,L]
+
+    # Blocks any path containing a segment starting with a dot
+    # (.git/HEAD, .git/config, .env, .htpasswd, etc.), except /.well-known/
+    # which must stay reachable for ACME/Let's Encrypt challenges.
+    RewriteCond %{REQUEST_URI} (^|/)\.(?!well-known/)
+    RewriteRule ^ - [F,L]
 </IfModule>
 
 # --- Disable directory browsing ---
 Options -Indexes
 
-# --- Block access to sensitive file extensions (.env, .sql, .log, .git, etc.) ---
+# --- Block access to sensitive file extensions even without mod_rewrite ---
 <FilesMatch "(^\.|\.(sql|env|log|bak|config|dist|sh|bat)$)">
     Require all denied
 </FilesMatch>
