@@ -415,7 +415,6 @@ Security Test Results: 22 / 22 PASSED (100% Compliance)
 
 ---
 
-## 11. License & Ethics
+## License
 
-This codebase is provided under the [The Unlicense](LICENSE) (Public Domain Dedication).  
-Use this software strictly for authorized training, educational security assessments, and private penetration testing laboratories.
+MIT. See [LICENSE](LICENSE).
