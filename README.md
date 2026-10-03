@@ -299,10 +299,12 @@ Before deploying PHP FreeBase to a public production environment:
 
 ## License
 
-This project is released under the **Unlicense** — public domain.
+MIT. See [LICENSE](LICENSE).
 
 <div align="center">
 
 Maintained by [@Nostraxiten](https://github.com/Nostraxiten)
 
 </div>
+
+
